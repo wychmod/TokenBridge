@@ -2,13 +2,10 @@
   "$schema": "https://wails.io/schemas/config.v2.json",
   "name": "lingshu",
   "outputfilename": "Lingshu",
-  "frontend": {
-    "dir": "web/admin",
-    "install": "npm install",
-    "build": "npm run build:wails",
-    "dev": "npm run dev",
-    "serve": "npx vite preview --port 5173"
-  },
+  "frontend:dir": "web/admin",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build:wails",
+  "frontend:dev": "npm run dev",
   "assetdir": "web/admin/dist",
   "wailsjsdir": "web/admin/src",
   "author": {
