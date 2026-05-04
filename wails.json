@@ -5,9 +5,10 @@
   "frontend:dir": "web/admin",
   "frontend:install": "npm install",
   "frontend:build": "npm run build:wails",
-  "frontend:dev": "npm run dev",
+  "frontend:dev": "node node_modules/vite/bin/vite.js 2>&1",
   "assetdir": "web/admin/dist",
   "wailsjsdir": "web/admin/src",
+  "viteServerTimeout": 15,
   "author": {
     "name": "Lingshu Team",
     "email": "team@lingshu.dev"
@@ -20,5 +21,3 @@
     "comments": "灵枢本地模型网关桌面版"
   }
 }
-
-
