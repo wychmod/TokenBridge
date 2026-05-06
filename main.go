@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"net/http"
+	"strings"
 
 	"github.com/getlantern/systray"
 	"github.com/wailsapp/wails/v2"
@@ -12,6 +13,8 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options/mac"
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
+
+	buildembed "localgateway/build/embed"
 )
 
 type spaProxy struct {
@@ -122,7 +125,17 @@ func main() {
 		StartHidden:      false,
 		BackgroundColour: &options.RGBA{R: 10, G: 14, B: 23, A: 1},
 		AssetServer: &assetserver.Options{
+			Assets:  buildembed.AdminAssetsFS(),
 			Handler: proxy,
+			Middleware: func(next http.Handler) http.Handler {
+				return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if strings.HasPrefix(r.URL.Path, "/admin/api") {
+						proxy.ServeHTTP(w, r)
+						return
+					}
+					next.ServeHTTP(w, r)
+				})
+			},
 		},
 		Menu: buildDesktopMenu(desktopApp),
 		Windows: &windows.Options{

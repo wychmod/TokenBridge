@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:wails": "set VITE_WAILS_DEV=1&& vite",
     "build": "vite build && node scripts/sync-embed.mjs",
     "build:wails": "vite build --base ./ && node scripts/sync-embed.mjs",
     "preview": "vite preview"
@@ -20,6 +21,7 @@
     "zustand": "^5.0.0"
   },
   "devDependencies": {
+    "@types/node": "^25.6.0",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
