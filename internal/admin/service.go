@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"localgateway/internal/auth"
+	"localgateway/internal/pricing"
 	"localgateway/internal/provider"
 	"localgateway/internal/requestlog"
 	"localgateway/internal/routing"
@@ -12,11 +13,12 @@ import (
 )
 
 type Overview struct {
-	Providers int                  `json:"providers"`
-	Keys      int                  `json:"keys"`
-	Usage     usage.Summary        `json:"usage"`
-	Settings  settings.AppSettings `json:"settings"`
-	Rules     int                  `json:"rules"`
+	Providers     int                  `json:"providers"`
+	Keys          int                  `json:"keys"`
+	Usage         usage.Summary        `json:"usage"`
+	Settings      settings.AppSettings `json:"settings"`
+	Rules         int                  `json:"rules"`
+	PricingModels int                  `json:"pricing_models"`
 }
 
 type DashboardData struct {
@@ -45,13 +47,14 @@ type Service struct {
 	providers   *provider.Service
 	keys        *auth.Service
 	usage       *usage.Service
+	pricing     *pricing.Service
 	routing     *routing.Service
 	settings    *settings.Service
 	requestLogs *requestlog.Service
 }
 
-func NewService(providers *provider.Service, keys *auth.Service, usageService *usage.Service, routingService *routing.Service, settingsService *settings.Service, requestLogs *requestlog.Service) *Service {
-	return &Service{providers: providers, keys: keys, usage: usageService, routing: routingService, settings: settingsService, requestLogs: requestLogs}
+func NewService(providers *provider.Service, keys *auth.Service, usageService *usage.Service, pricingService *pricing.Service, routingService *routing.Service, settingsService *settings.Service, requestLogs *requestlog.Service) *Service {
+	return &Service{providers: providers, keys: keys, usage: usageService, pricing: pricingService, routing: routingService, settings: settingsService, requestLogs: requestLogs}
 }
 
 func (s *Service) Overview(ctx context.Context) (Overview, error) {
@@ -75,7 +78,7 @@ func (s *Service) Overview(ctx context.Context) (Overview, error) {
 	if err != nil {
 		return Overview{}, err
 	}
-	return Overview{Providers: len(providers), Keys: len(keys), Usage: usageSummary, Settings: appSettings, Rules: len(rules)}, nil
+	return Overview{Providers: len(providers), Keys: len(keys), Usage: usageSummary, Settings: appSettings, Rules: len(rules), PricingModels: s.pricing.Count(ctx)}, nil
 }
 
 func (s *Service) Dashboard(ctx context.Context) (DashboardData, error) {

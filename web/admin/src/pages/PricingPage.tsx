@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { DollarSign, RefreshCw, Search, TrendingUp, Database, CheckCircle, AlertCircle, Loader2, Eye } from "lucide-react";
+import { useAdminStore } from "../store/admin-store";
 
 type ModelPricing = {
   model_id: string;
@@ -30,13 +31,13 @@ type LookupResult = {
 };
 
 export function PricingPage() {
+  const { pushNotice } = useAdminStore();
   const [models, setModels] = useState<ModelPricing[]>([]);
   const [status, setStatus] = useState<PricingStatus | null>(null);
   const [search, setSearch] = useState("");
   const [modeFilter, setModeFilter] = useState<"all" | "chat" | "embedding" | "image_generation" | "audio_transcription">("all");
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [lookupModel, setLookupModel] = useState("");
   const [lookupResult, setLookupResult] = useState<LookupResult | null>(null);
   const [lookupLoading, setLookupLoading] = useState(false);
@@ -69,7 +70,6 @@ export function PricingPage() {
 
   const loadModels = async () => {
     setLoading(true);
-    setError(null);
     try {
       const qs = modeFilter !== "all" ? `?mode=${modeFilter}` : "";
       const res = await fetch(`/admin/api/pricing/list${qs}`);
@@ -77,7 +77,7 @@ export function PricingPage() {
       const data = await res.json();
       setModels(data.data ?? []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "加载失败");
+      pushNotice({ tone: "warning", title: "定价加载失败", message: err instanceof Error ? err.message : "请检查后端服务" });
     } finally {
       setLoading(false);
     }
@@ -96,10 +96,12 @@ export function PricingPage() {
         const data = await res.json();
         throw new Error(data.message || data.error || `HTTP ${res.status}`);
       }
+      const data = await res.json();
       await loadStatus();
       await loadModels();
+      pushNotice({ tone: "success", title: "定价同步成功", message: `已同步 ${data.models_synced} 个模型` });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "同步失败");
+      pushNotice({ tone: "warning", title: "定价同步失败", message: err instanceof Error ? err.message : "请检查网络或后端服务" });
     } finally {
       setSyncing(false);
     }
@@ -193,15 +195,6 @@ export function PricingPage() {
             <TrendingUp size={13} />
             <span>上次同步: {fmtDate(status.last_sync)}</span>
           </div>
-        </div>
-      )}
-
-      {/* Error */}
-      {error && (
-        <div className="alert alert-warning" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <AlertCircle size={14} />
-          <span>{error}</span>
-          <button type="button" className="btn btn-ghost btn-xs" onClick={() => setError(null)}>关闭</button>
         </div>
       )}
 

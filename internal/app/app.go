@@ -74,7 +74,7 @@ func New() (*Application, error) {
 	routingService := routing.NewService(db, providerService, cfg.Routing.DefaultStrategy)
 	settingsService := settings.NewService(db)
 	pricingService := pricing.NewService(db, logger)
-	adminService := admin.NewService(providerService, keyService, usageService, routingService, settingsService, requestLogService)
+	adminService := admin.NewService(providerService, keyService, usageService, pricingService, routingService, settingsService, requestLogService)
 
 	application := &Application{
 		Config:      cfg,
