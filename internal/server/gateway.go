@@ -228,3 +228,18 @@ func logRequestBestEffort(ctx context.Context, db *gorm.DB, localKeyID string, p
 	data, _ := json.Marshal(metadata)
 	_ = db.WithContext(ctx).Create(&models.RequestLog{ID: "log_" + uuid.NewString(), LocalKeyID: localKeyID, ProviderID: providerID, Path: path, Method: method, StatusCode: statusCode, LatencyMS: latencyMS, ErrorMessage: errMsg, MetadataJSON: string(data), CreatedAt: time.Now()}).Error
 }
+
+// injectStreamOptions adds stream_options.include_usage=true to an OpenAI stream request
+// so the upstream returns token usage in the final SSE chunk.
+func injectStreamOptions(requestBytes []byte) []byte {
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(requestBytes, &m); err != nil {
+		return requestBytes
+	}
+	m["stream_options"] = json.RawMessage(`{"include_usage":true}`)
+	out, err := json.Marshal(m)
+	if err != nil {
+		return requestBytes
+	}
+	return out
+}

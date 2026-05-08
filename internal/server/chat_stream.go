@@ -31,6 +31,9 @@ func (r *Router) handleChatCompletionsStream(w http.ResponseWriter, req *http.Re
 		return
 	}
 
+	// Inject stream_options so upstream includes usage in the final SSE chunk
+	requestBytes = injectStreamOptions(requestBytes)
+
 	trace := newRequestTrace(decision.Provider.Name, payload.Model, decision.Model, "openai_stream")
 	client := newOpenAIClient(r.deps.Config.Proxy.StreamTimeout)
 	startedAt := time.Now()
