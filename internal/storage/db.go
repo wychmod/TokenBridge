@@ -30,6 +30,7 @@ func OpenDatabase(cfg config.DatabaseConfig) (*gorm.DB, error) {
 		&models.Setting{},
 		&models.UsageRecord{},
 		&models.RequestLog{},
+		&models.ModelPricing{},
 	); err != nil {
 		return nil, fmt.Errorf("auto migrate: %w", err)
 	}

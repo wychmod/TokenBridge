@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"os"
 
 	"github.com/rs/zerolog"
@@ -10,6 +11,7 @@ import (
 	"localgateway/internal/auth"
 	"localgateway/internal/config"
 	"localgateway/internal/paths"
+	"localgateway/internal/pricing"
 	"localgateway/internal/provider"
 	"localgateway/internal/requestlog"
 	"localgateway/internal/routing"
@@ -28,6 +30,7 @@ type Application struct {
 	Keys        *auth.Service
 	Routing     *routing.Service
 	Usage       *usage.Service
+	Pricing     *pricing.Service
 	Settings    *settings.Service
 	Admin       *admin.Service
 	RequestLogs *requestlog.Service
@@ -70,6 +73,7 @@ func New() (*Application, error) {
 	requestLogService := requestlog.NewService(db)
 	routingService := routing.NewService(db, providerService, cfg.Routing.DefaultStrategy)
 	settingsService := settings.NewService(db)
+	pricingService := pricing.NewService(db, logger)
 	adminService := admin.NewService(providerService, keyService, usageService, routingService, settingsService, requestLogService)
 
 	application := &Application{
@@ -80,10 +84,22 @@ func New() (*Application, error) {
 		Keys:        keyService,
 		Routing:     routingService,
 		Usage:       usageService,
+		Pricing:     pricingService,
 		Settings:    settingsService,
 		Admin:       adminService,
 		RequestLogs: requestLogService,
 	}
+
+	// Ensure first startup has local pricing data from the embedded snapshot, then update remotely in the background.
+	pricingCtx := context.Background()
+	if count, err := pricingService.EnsureLocalCache(pricingCtx); err != nil {
+		logger.Warn().Err(err).Msg("pricing: failed to initialize embedded pricing cache")
+	} else {
+		logger.Info().Int("models", count).Msg("pricing: local pricing cache ready")
+	}
+	go func() {
+		pricingService.SyncBestEffort(context.Background())
+	}()
 
 	application.Router = server.NewRouter(server.Dependencies{
 		Config:      cfg,
@@ -92,6 +108,7 @@ func New() (*Application, error) {
 		Keys:        keyService,
 		Routing:     routingService,
 		Usage:       usageService,
+		Pricing:     pricingService,
 		Settings:    settingsService,
 		Admin:       adminService,
 		RequestLogs: requestLogService,

@@ -3,6 +3,7 @@ import {
   Activity,
   BarChart3,
   Bell,
+  DollarSign,
   KeyRound,
   LayoutDashboard,
   Maximize2,
@@ -52,6 +53,7 @@ const navItems = [
   { to: "/routing", label: "路由", icon: Route },
   { to: "/analytics", label: "分析", icon: BarChart3 },
   { to: "/logs", label: "日志", icon: ScrollText },
+  { to: "/pricing", label: "定价", icon: DollarSign },
   { to: "/settings", label: "设置", icon: Settings }
 ];
 

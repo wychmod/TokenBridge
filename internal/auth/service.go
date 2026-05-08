@@ -155,9 +155,29 @@ func (s *Service) Validate(ctx context.Context, key string) (*models.LocalKey, e
 	if entity.ExpiresAt != nil && entity.ExpiresAt.Before(time.Now()) {
 		return nil, errors.New("local key expired")
 	}
-		now := time.Now()
-		s.db.WithContext(ctx).Model(&entity).Update("last_used_at", &now)
+	// Budget enforcement: reject if monthly budget is set and exceeded
+	if entity.MonthlyBudget > 0 && entity.CurrentSpend >= entity.MonthlyBudget {
+		return nil, errors.New("monthly budget exceeded")
+	}
+	// Token budget enforcement: reject if token budget is set and exceeded
+	if entity.TokenBudget > 0 && entity.CurrentTokens >= entity.TokenBudget {
+		return nil, errors.New("token budget exceeded")
+	}
+	now := time.Now()
+	s.db.WithContext(ctx).Model(&entity).Update("last_used_at", &now)
 	return &entity, nil
+}
+
+// DeductUsage atomically increments CurrentSpend and CurrentTokens for a LocalKey after a successful request.
+func (s *Service) DeductUsage(ctx context.Context, keyID string, costUSD float64, inputTokens, outputTokens int64) error {
+	if keyID == "" {
+		return nil
+	}
+	totalTokens := inputTokens + outputTokens
+	return s.db.WithContext(ctx).Model(&models.LocalKey{}).Where("id = ?", keyID).Updates(map[string]any{
+		"current_spend":  gorm.Expr("current_spend + ?", costUSD),
+		"current_tokens": gorm.Expr("current_tokens + ?", totalTokens),
+	}).Error
 }
 
 func generateLocalKey() string {

@@ -6,6 +6,7 @@ import { KeysPage } from "./pages/KeysPage";
 import { RoutingPage } from "./pages/RoutingPage";
 import { AnalyticsPage } from "./pages/AnalyticsPage";
 import { LogsPage } from "./pages/LogsPage";
+import { PricingPage } from "./pages/PricingPage";
 import { SettingsPage } from "./pages/SettingsPage";
 
 export default function App() {
@@ -19,6 +20,7 @@ export default function App() {
         <Route path="/routing" element={<RoutingPage />} />
         <Route path="/analytics" element={<AnalyticsPage />} />
         <Route path="/logs" element={<LogsPage />} />
+        <Route path="/pricing" element={<PricingPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>

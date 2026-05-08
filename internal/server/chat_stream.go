@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -65,17 +66,35 @@ func (r *Router) handleChatCompletionsStream(w http.ResponseWriter, req *http.Re
 	w.Header().Set("X-Request-Trace-Id", trace.ID)
 	w.WriteHeader(http.StatusOK)
 
+	// Track usage from the final chunk
+	var streamUsage openAIChatResponse
+
 	reader := bufio.NewReader(resp.Body)
 	for {
 		line, readErr := reader.ReadBytes('\n')
 		if len(line) > 0 {
 			_, _ = w.Write(line)
 			flusher.Flush()
+
+			// Try to extract usage from each SSE data line
+			lineStr := strings.TrimSpace(string(line))
+			if strings.HasPrefix(lineStr, "data: ") && lineStr != "data: [DONE]" {
+				var chunk openAIChatResponse
+				if json.Unmarshal([]byte(lineStr[6:]), &chunk) == nil {
+					if chunk.Usage.PromptTokens > 0 || chunk.Usage.CompletionTokens > 0 {
+						streamUsage = chunk
+					}
+				}
+			}
 		}
 		if readErr != nil {
 			break
 		}
 	}
 
+	// Record usage if we got it from the stream
+	if streamUsage.Usage.PromptTokens > 0 || streamUsage.Usage.CompletionTokens > 0 {
+		recordUsageBestEffort(req.Context(), r.deps.Usage, r.deps.Pricing, r.deps.Keys, localKey.ID, decision.Provider.ID, payload.Model, decision.Model, "openai_stream", time.Since(startedAt).Milliseconds(), true, streamUsage)
+	}
 	logRequestBestEffort(req.Context(), r.deps.DB, localKey.ID, decision.Provider.ID, "/v1/chat/completions", req.Method, http.StatusOK, time.Since(startedAt).Milliseconds(), "", trace)
 }

@@ -14,11 +14,9 @@ import (
 	"gorm.io/gorm"
 	"localgateway/internal/auth"
 	"localgateway/internal/models"
+	"localgateway/internal/pricing"
 	"localgateway/internal/usage"
 )
-
-
-
 
 type openAIClient struct {
 	httpClient *http.Client
@@ -188,8 +186,34 @@ func stringInSlice(items []string, target string) bool {
 	return false
 }
 
-func recordUsageBestEffort(ctx context.Context, svc *usage.Service, localKeyID string, providerID string, requestedModel string, actualModel string, apiFormat string, latencyMS int64, success bool, usageInfo openAIChatResponse) {
-	_ = svc.Record(ctx, usage.RecordInput{LocalKeyID: localKeyID, ProviderID: providerID, ModelRequested: requestedModel, ModelActual: actualModel, APIFormat: apiFormat, InputTokens: usageInfo.Usage.PromptTokens, OutputTokens: usageInfo.Usage.CompletionTokens, TotalCostUSD: 0, LatencyMS: latencyMS, Success: success})
+func recordUsageBestEffort(ctx context.Context, svc *usage.Service, pricingSvc *pricing.Service, authSvc *auth.Service, localKeyID string, providerID string, requestedModel string, actualModel string, apiFormat string, latencyMS int64, success bool, usageInfo openAIChatResponse) {
+	modelID := actualModel
+	if modelID == "" {
+		modelID = requestedModel
+	}
+	cost := 0.0
+	if pricingSvc != nil {
+		cost = pricingSvc.CalculateCost(ctx, modelID, usageInfo.Usage.PromptTokens, usageInfo.Usage.CompletionTokens)
+	}
+	_ = svc.Record(ctx, usage.RecordInput{LocalKeyID: localKeyID, ProviderID: providerID, ModelRequested: requestedModel, ModelActual: actualModel, APIFormat: apiFormat, InputTokens: usageInfo.Usage.PromptTokens, OutputTokens: usageInfo.Usage.CompletionTokens, TotalCostUSD: cost, LatencyMS: latencyMS, Success: success})
+	if success && authSvc != nil {
+		_ = authSvc.DeductUsage(ctx, localKeyID, cost, usageInfo.Usage.PromptTokens, usageInfo.Usage.CompletionTokens)
+	}
+}
+
+func recordClaudeUsageBestEffort(ctx context.Context, svc *usage.Service, pricingSvc *pricing.Service, authSvc *auth.Service, localKeyID string, providerID string, requestedModel string, actualModel string, apiFormat string, latencyMS int64, success bool, resp claudeMessagesResponse) {
+	modelID := actualModel
+	if modelID == "" {
+		modelID = requestedModel
+	}
+	cost := 0.0
+	if pricingSvc != nil {
+		cost = pricingSvc.CalculateCost(ctx, modelID, resp.Usage.InputTokens, resp.Usage.OutputTokens)
+	}
+	_ = svc.Record(ctx, usage.RecordInput{LocalKeyID: localKeyID, ProviderID: providerID, ModelRequested: requestedModel, ModelActual: actualModel, APIFormat: apiFormat, InputTokens: resp.Usage.InputTokens, OutputTokens: resp.Usage.OutputTokens, TotalCostUSD: cost, LatencyMS: latencyMS, Success: success})
+	if success && authSvc != nil {
+		_ = authSvc.DeductUsage(ctx, localKeyID, cost, resp.Usage.InputTokens, resp.Usage.OutputTokens)
+	}
 }
 
 func readBodyAndClose(body io.ReadCloser) ([]byte, error) {
@@ -204,4 +228,3 @@ func logRequestBestEffort(ctx context.Context, db *gorm.DB, localKeyID string, p
 	data, _ := json.Marshal(metadata)
 	_ = db.WithContext(ctx).Create(&models.RequestLog{ID: "log_" + uuid.NewString(), LocalKeyID: localKeyID, ProviderID: providerID, Path: path, Method: method, StatusCode: statusCode, LatencyMS: latencyMS, ErrorMessage: errMsg, MetadataJSON: string(data), CreatedAt: time.Now()}).Error
 }
-

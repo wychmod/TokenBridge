@@ -93,3 +93,19 @@ type RequestLog struct {
 	MetadataJSON string    `json:"metadata_json"`
 	CreatedAt    time.Time `json:"created_at"`
 }
+
+type ModelPricing struct {
+	ModelID                   string    `json:"model_id" gorm:"primaryKey"`
+	LitellmProvider           string    `json:"litellm_provider"`
+	Mode                      string    `json:"mode"`
+	MaxInputTokens            int64     `json:"max_input_tokens"`
+	MaxOutputTokens           int64     `json:"max_output_tokens"`
+	InputCostPerToken         float64   `json:"input_cost_per_token"`
+	OutputCostPerToken        float64   `json:"output_cost_per_token"`
+	CacheCreationCostPerToken float64   `json:"cache_creation_cost_per_token"`
+	CacheReadCostPerToken     float64   `json:"cache_read_cost_per_token"`
+	SupportsVision            bool      `json:"supports_vision"`
+	SupportsFunctionCalling   bool      `json:"supports_function_calling"`
+	SupportsPromptCaching     bool      `json:"supports_prompt_caching"`
+	FetchedAt                 time.Time `json:"fetched_at"`
+}

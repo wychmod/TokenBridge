@@ -66,7 +66,7 @@ func (r *Router) handleChatCompletions(w http.ResponseWriter, req *http.Request)
 		return
 	}
 
-	recordUsageBestEffort(req.Context(), r.deps.Usage, localKey.ID, providerID, payload.Model, decision.Model, "openai", latencyMS, true, upstream)
+	recordUsageBestEffort(req.Context(), r.deps.Usage, r.deps.Pricing, r.deps.Keys, localKey.ID, providerID, payload.Model, decision.Model, "openai", latencyMS, true, upstream)
 	logRequestBestEffort(req.Context(), r.deps.DB, localKey.ID, providerID, "/v1/chat/completions", req.Method, http.StatusOK, latencyMS, "", trace)
 
 	w.Header().Set("Content-Type", "application/json")

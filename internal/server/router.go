@@ -14,6 +14,7 @@ import (
 	"localgateway/internal/admin"
 	"localgateway/internal/auth"
 	"localgateway/internal/config"
+	"localgateway/internal/pricing"
 	"localgateway/internal/provider"
 	"localgateway/internal/requestlog"
 	"localgateway/internal/routing"
@@ -30,14 +31,12 @@ type Dependencies struct {
 	Keys        *auth.Service
 	Routing     *routing.Service
 	Usage       *usage.Service
+	Pricing     *pricing.Service
 	Settings    *settings.Service
 	Admin       *admin.Service
 	RequestLogs *requestlog.Service
 	DB          *gorm.DB
 }
-
-
-
 
 type Router struct {
 	mux  chi.Router
@@ -68,6 +67,8 @@ func (r *Router) mount() {
 	r.mux.Get("/v1/models", r.handleModels)
 	r.mux.Post("/v1/chat/completions", r.handleChatCompletions)
 	r.mux.Post("/v1/messages", r.handleClaudeMessages)
+
+	pricingH := newPricingHandlers(r.deps.Pricing)
 
 	r.mux.Route("/admin/api", func(adminRouter chi.Router) {
 		adminRouter.Get("/logs/export", r.handleAdminLogsExport)
@@ -103,6 +104,13 @@ func (r *Router) mount() {
 		adminRouter.Put("/settings", r.handleSaveSettings)
 		adminRouter.Post("/settings/backup", r.handleBackupSettings)
 		adminRouter.Get("/distribution", r.handleDistributionPlan)
+
+		// Model pricing endpoints
+		adminRouter.Post("/pricing/refresh", pricingH.handleRefresh)
+		adminRouter.Get("/pricing/status", pricingH.handleStatus)
+		adminRouter.Get("/pricing/lookup", pricingH.handleLookup)
+		adminRouter.Get("/pricing/list", pricingH.handleList)
+		adminRouter.Get("/pricing/estimate", pricingH.handleEstimate)
 	})
 
 	adminAssets := http.FileServer(embed.AdminFS())
@@ -171,4 +179,3 @@ func (r *Router) serveAdminIndex(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	http.ServeContent(w, &http.Request{URL: &url.URL{Path: "/admin/index.html"}}, "index.html", stat.ModTime(), f)
 }
-

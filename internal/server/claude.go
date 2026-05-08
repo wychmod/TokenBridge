@@ -17,6 +17,25 @@ type claudeMessagesRequest struct {
 	} `json:"messages"`
 }
 
+type claudeMessagesResponse struct {
+	ID      string `json:"id"`
+	Type    string `json:"type"`
+	Role    string `json:"role"`
+	Content []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	} `json:"content"`
+	Model        string `json:"model"`
+	StopReason   string `json:"stop_reason"`
+	StopSequence string `json:"stop_sequence"`
+	Usage        struct {
+		InputTokens              int64 `json:"input_tokens"`
+		OutputTokens             int64 `json:"output_tokens"`
+		CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
+		CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
+	} `json:"usage"`
+}
+
 func (r *Router) handleClaudeMessages(w http.ResponseWriter, req *http.Request) {
 	var payload claudeMessagesRequest
 	if err := decodeJSON(req, &payload); err != nil {
@@ -81,5 +100,11 @@ func (r *Router) handleClaudeMessages(w http.ResponseWriter, req *http.Request) 
 	w.Header().Set("X-Request-Trace-Id", trace.ID)
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(responseBytes)
+
+	// Parse Claude response for usage recording
+	var claudeResp claudeMessagesResponse
+	if err := json.Unmarshal(responseBytes, &claudeResp); err == nil {
+		recordClaudeUsageBestEffort(req.Context(), r.deps.Usage, r.deps.Pricing, r.deps.Keys, localKey.ID, decision.Provider.ID, payload.Model, decision.Model, "claude", time.Since(startedAt).Milliseconds(), true, claudeResp)
+	}
 	logRequestBestEffort(req.Context(), r.deps.DB, localKey.ID, decision.Provider.ID, "/v1/messages", req.Method, http.StatusOK, time.Since(startedAt).Milliseconds(), "", trace)
 }
