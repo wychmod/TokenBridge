@@ -3,24 +3,25 @@ import { ArrowDown, ArrowUp, Eye, EyeOff, Plus, RefreshCcw, Trash2, Wifi, X } fr
 import { useAdminStore } from "../store/admin-store";
 import { providerStatusMap } from "../store/labels";
 
+const providerTypeOptions = [
+  { value: "openai", label: "OpenAI", hint: "官方 Chat Completions", defaultBaseURL: "https://api.openai.com", modelPlaceholder: "gpt-4o, gpt-4o-mini, o3-mini" },
+  { value: "openai-compatible", label: "OpenAI 兼容", hint: "DeepSeek / OpenRouter / 硅基流动等", defaultBaseURL: "https://api.deepseek.com", modelPlaceholder: "deepseek-chat, deepseek-reasoner" },
+  { value: "anthropic", label: "Anthropic (Claude)", hint: "官方 Messages API", defaultBaseURL: "https://api.anthropic.com", modelPlaceholder: "claude-sonnet-4, claude-haiku-4" }
+] as const;
+
 const emptyProvider = (count: number) => ({
   id: `prov-${Date.now()}`,
   name: "新厂商",
-  type: "OpenAI 兼容",
-  baseURL: "https://",
+  type: "openai-compatible",
+  baseURL: "https://api.deepseek.com",
   apiKey: "",
+  enabled: true,
   status: "healthy" as const,
   priority: count + 1,
   models: [],
   rpm: 60,
   tpm: 120000
 });
-
-const providerTypeOptions = [
-  { value: "OpenAI 兼容", label: "OpenAI 兼容", hint: "Chat Completions /v1" },
-  { value: "Anthropic 兼容", label: "Anthropic 兼容", hint: "Messages /v1" },
-  { value: "DeepSeek 兼容", label: "DeepSeek 兼容", hint: "OpenAI 格式" }
-];
 
 export function ProvidersPage() {
   const {
@@ -32,7 +33,6 @@ export function ProvidersPage() {
     reorderProviders,
     testProvider,
     discoverProviderModels,
-    pushNotice
   } = useAdminStore();
 
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -46,13 +46,14 @@ export function ProvidersPage() {
 
   useEffect(() => {
     if (active) {
-      setForm(active);
+      setForm({ ...active, type: normalizeProviderType(active.type) });
     }
   }, [active]);
 
   const openDrawer = (provider?: typeof form) => {
     if (provider) {
-      setForm(provider);
+      const normalized = { ...provider, type: normalizeProviderType(provider.type) };
+      setForm(normalized);
       setSelectedProvider(provider.id);
     } else {
       const next = emptyProvider(providers.length);
@@ -69,7 +70,7 @@ export function ProvidersPage() {
   };
 
   const handleSave = async () => {
-    await saveProvider(form);
+    await saveProvider({ ...form, type: normalizeProviderType(form.type) });
     closeDrawer();
   };
 
@@ -88,12 +89,25 @@ export function ProvidersPage() {
     void reorderProviders(next.map((provider) => provider.id));
   };
 
+  const handleTypeChange = (nextType: string) => {
+    const normalizedCurrent = normalizeProviderType(form.type);
+    const nextOption = providerTypeOptions.find((option) => option.value === nextType);
+    setForm({
+      ...form,
+      type: nextType,
+      baseURL: shouldAutoReplaceBaseURL(form.baseURL, normalizedCurrent)
+        ? nextOption?.defaultBaseURL ?? form.baseURL
+        : form.baseURL,
+    });
+  };
+
+  const normalizedFormType = normalizeProviderType(form.type);
+  const selectedType = providerTypeOptions.find((option) => option.value === normalizedFormType) ?? providerTypeOptions[1];
   const modelsText = form.models.join(", ");
-  const hasUnsavedChanges = JSON.stringify(form) !== JSON.stringify(active ?? {});
+  const hasUnsavedChanges = JSON.stringify({ ...form, type: normalizeProviderType(form.type) }) !== JSON.stringify(active ? { ...active, type: normalizeProviderType(active.type) } : {});
 
   return (
     <div className="flex-col gap-4">
-      {/* Header */}
       <div className="section-header">
         <div className="section-header-main">
           <span className="eyebrow">模型接入</span>
@@ -106,14 +120,12 @@ export function ProvidersPage() {
         </div>
       </div>
 
-      {/* Stats */}
       <div className="flex items-center gap-2">
         <span className="pill pill-neutral">总数 {providers.length}</span>
         <span className="pill pill-success">在线 {providers.filter((p) => p.status === "healthy").length}</span>
         <span className="pill pill-warning">异常 {providers.filter((p) => p.status === "warning").length}</span>
       </div>
 
-      {/* List */}
       <div className="flex-col gap-2 list-animate">
         {providers.map((provider, index) => (
           <div
@@ -159,43 +171,23 @@ export function ProvidersPage() {
                 </span>
               </div>
               <span className="list-row-meta">
-                {provider.type} · {provider.baseURL}
+                {providerTypeLabel(provider.type)} · {provider.baseURL}
               </span>
               <span className="list-row-sub">
                 {provider.models.length} 个模型 · {provider.rpm} RPM · {provider.tpm.toLocaleString()} TPM · 优先级 #{provider.priority}
               </span>
             </div>
             <div className="list-row-actions">
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                disabled={index === 0}
-                onClick={(e) => { e.stopPropagation(); moveProvider(provider.id, -1); }}
-                title="上移"
-              >
+              <button type="button" className="btn btn-ghost btn-sm" disabled={index === 0} onClick={(e) => { e.stopPropagation(); moveProvider(provider.id, -1); }} title="上移">
                 <ArrowUp size={14} />
               </button>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                disabled={index === providers.length - 1}
-                onClick={(e) => { e.stopPropagation(); moveProvider(provider.id, 1); }}
-                title="下移"
-              >
+              <button type="button" className="btn btn-ghost btn-sm" disabled={index === providers.length - 1} onClick={(e) => { e.stopPropagation(); moveProvider(provider.id, 1); }} title="下移">
                 <ArrowDown size={14} />
               </button>
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={(e) => { e.stopPropagation(); openDrawer(provider); }}
-              >
+              <button type="button" className="btn btn-secondary btn-sm" onClick={(e) => { e.stopPropagation(); openDrawer(provider); }}>
                 编辑
               </button>
-              <button
-                type="button"
-                className="btn btn-danger btn-sm"
-                onClick={(e) => { e.stopPropagation(); void handleDelete(provider.id); }}
-              >
+              <button type="button" className="btn btn-danger btn-sm" onClick={(e) => { e.stopPropagation(); void handleDelete(provider.id); }}>
                 <Trash2 size={14} />
               </button>
             </div>
@@ -206,12 +198,11 @@ export function ProvidersPage() {
           <div className="empty-state">
             <span style={{ fontSize: "1.25rem", color: "var(--text-tertiary)" }}>○</span>
             <span className="empty-state-title">暂无厂商</span>
-            <span className="empty-state-desc">点击右上角"新建厂商"添加第一个模型接入点</span>
+            <span className="empty-state-desc">点击右上角“新建厂商”添加第一个模型接入点</span>
           </div>
         )}
       </div>
 
-      {/* Drawer */}
       {drawerOpen && (
         <>
           <div className="drawer-overlay" onClick={closeDrawer} />
@@ -232,12 +223,7 @@ export function ProvidersPage() {
               <div className="form-grid">
                 <div className="form-field span-2">
                   <label className="form-label">厂商名称</label>
-                  <input
-                    className="form-control"
-                    value={form.name}
-                    onChange={(e) => setForm({ ...form, name: e.target.value })}
-                    placeholder="例如：OpenAI 主线路"
-                  />
+                  <input className="form-control" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="例如：OpenAI 主线路" />
                 </div>
 
                 <div className="form-field span-2">
@@ -251,8 +237,8 @@ export function ProvidersPage() {
                           cursor: "pointer",
                           padding: "var(--space-3)",
                           borderRadius: "var(--radius-sm)",
-                          background: form.type === option.value ? "var(--accent-dim)" : "var(--bg-base)",
-                          border: form.type === option.value ? "1px solid var(--accent)" : "1px solid var(--border-subtle)",
+                          background: normalizedFormType === option.value ? "var(--accent-dim)" : "var(--bg-base)",
+                          border: normalizedFormType === option.value ? "1px solid var(--accent)" : "1px solid var(--border-subtle)",
                           transition: "all 150ms ease"
                         }}
                       >
@@ -260,8 +246,8 @@ export function ProvidersPage() {
                           type="radio"
                           name="provider-type"
                           value={option.value}
-                          checked={form.type === option.value}
-                          onChange={() => setForm({ ...form, type: option.value })}
+                          checked={normalizedFormType === option.value}
+                          onChange={() => handleTypeChange(option.value)}
                           style={{ position: "absolute", opacity: 0 }}
                         />
                         <strong style={{ fontSize: "0.85rem" }}>{option.label}</strong>
@@ -278,10 +264,10 @@ export function ProvidersPage() {
                     type="url"
                     value={form.baseURL}
                     onChange={(e) => setForm({ ...form, baseURL: e.target.value })}
-                    placeholder="https://api.example.com"
+                    placeholder={selectedType.defaultBaseURL}
                     spellCheck={false}
                   />
-                  <span className="form-hint">填写基础地址即可，系统会自动追加 /v1/chat/completions 或 /v1/messages</span>
+                  <span className="form-hint">填写官方或兼容厂商的基础地址即可，系统会按请求格式追加官方路径。</span>
                 </div>
 
                 <div className="form-field span-2">
@@ -292,15 +278,11 @@ export function ProvidersPage() {
                       type={showApiKey ? "text" : "password"}
                       value={form.apiKey ?? ""}
                       onChange={(e) => setForm({ ...form, apiKey: e.target.value })}
-                      placeholder="sk-..."
+                      placeholder={normalizedFormType === "anthropic" ? "sk-ant-..." : "sk-..."}
                       autoComplete="off"
                       spellCheck={false}
                     />
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-icon"
-                      onClick={() => setShowApiKey((v) => !v)}
-                    >
+                    <button type="button" className="btn btn-ghost btn-icon" onClick={() => setShowApiKey((v) => !v)}>
                       {showApiKey ? <EyeOff size={16} /> : <Eye size={16} />}
                     </button>
                   </div>
@@ -308,26 +290,12 @@ export function ProvidersPage() {
 
                 <div className="form-field">
                   <label className="form-label">每分钟请求数 (RPM)</label>
-                  <input
-                    className="form-control"
-                    type="number"
-                    min={0}
-                    step={1}
-                    value={form.rpm}
-                    onChange={(e) => setForm({ ...form, rpm: Number(e.target.value) })}
-                  />
+                  <input className="form-control" type="number" min={0} step={1} value={form.rpm} onChange={(e) => setForm({ ...form, rpm: Number(e.target.value) })} />
                 </div>
 
                 <div className="form-field">
                   <label className="form-label">每分钟令牌数 (TPM)</label>
-                  <input
-                    className="form-control"
-                    type="number"
-                    min={0}
-                    step={1000}
-                    value={form.tpm}
-                    onChange={(e) => setForm({ ...form, tpm: Number(e.target.value) })}
-                  />
+                  <input className="form-control" type="number" min={0} step={1000} value={form.tpm} onChange={(e) => setForm({ ...form, tpm: Number(e.target.value) })} />
                 </div>
 
                 <div className="form-field span-2">
@@ -336,10 +304,10 @@ export function ProvidersPage() {
                     className="form-control"
                     value={modelsText}
                     onChange={(e) => setForm({ ...form, models: e.target.value.split(/[\n,]/).map((s) => s.trim()).filter(Boolean) })}
-                    placeholder="例如：gpt-4o, gpt-4o-mini, o3-mini"
+                    placeholder={`例如：${selectedType.modelPlaceholder}`}
                     rows={3}
                   />
-                  <span className="form-hint">支持逗号或换行分隔</span>
+                  <span className="form-hint">支持逗号或换行分隔。Claude 模型应走 Anthropic 类型；DeepSeek/OpenRouter 等走 OpenAI 兼容。</span>
                 </div>
               </div>
 
@@ -351,29 +319,35 @@ export function ProvidersPage() {
             </div>
 
             <div className="drawer-footer">
-              <button type="button" className="btn btn-primary" onClick={() => void handleSave()}>
-                保存配置
-              </button>
-              <button type="button" className="btn btn-secondary" onClick={() => void testProvider(form.id)}>
-                <Wifi size={14} /> 测试连接
-              </button>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={async () => {
-                  const models = await discoverProviderModels(form.id);
-                  if (models.length) setForm({ ...form, models });
-                }}
-              >
+              <button type="button" className="btn btn-primary" onClick={() => void handleSave()}>保存配置</button>
+              <button type="button" className="btn btn-secondary" onClick={() => void testProvider(form.id)}><Wifi size={14} /> 测试连接</button>
+              <button type="button" className="btn btn-secondary" onClick={async () => { const models = await discoverProviderModels(form.id); if (models.length) setForm({ ...form, models }); }}>
                 <RefreshCcw size={14} /> 发现模型
               </button>
-              <button type="button" className="btn btn-danger" onClick={() => void handleDelete(form.id)}>
-                <Trash2 size={14} /> 删除
-              </button>
+              <button type="button" className="btn btn-danger" onClick={() => void handleDelete(form.id)}><Trash2 size={14} /> 删除</button>
             </div>
           </aside>
         </>
       )}
     </div>
   );
+}
+
+function normalizeProviderType(type: string): string {
+  const value = type.trim().toLowerCase();
+  if (["openai", "openai官方", "openai 官方"].includes(value)) return "openai";
+  if (["openai-compatible", "openai compatible", "openai 兼容", "openai兼容", "deepseek", "deepseek 兼容", "deepseek兼容"].includes(value)) return "openai-compatible";
+  if (["anthropic", "claude", "anthropic compatible", "anthropic 兼容", "anthropic兼容", "anthropic official", "anthropic 官方", "anthropic官方"].includes(value)) return "anthropic";
+  return type;
+}
+
+function providerTypeLabel(type: string): string {
+  const normalized = normalizeProviderType(type);
+  return providerTypeOptions.find((option) => option.value === normalized)?.label ?? type;
+}
+
+function shouldAutoReplaceBaseURL(baseURL: string, currentType: string): boolean {
+  const value = baseURL.trim();
+  if (!value || value === "https://") return true;
+  return providerTypeOptions.some((option) => value === option.defaultBaseURL || value === `${option.defaultBaseURL}/`);
 }

@@ -6,18 +6,24 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"localgateway/internal/provider"
 )
 
-func (r *Router) handleChatCompletionsStream(w http.ResponseWriter, req *http.Request, payload chatCompletionRequest) {
+func (r *Router) handleChatCompletionsStream(w http.ResponseWriter, req *http.Request, requestBytes []byte, meta chatCompletionMeta) {
 	localKey, err := validateLocalKey(req.Context(), r.deps.Keys, extractLocalKey(req))
 	if err != nil {
 		writeGatewayError(w, err)
 		return
 	}
 
-	decision, err := r.deps.Routing.Decide(req.Context(), payload.Model)
+	decision, err := r.deps.Routing.Decide(req.Context(), meta.Model)
 	if err != nil {
 		writeGatewayError(w, &gatewayError{HTTPStatus: http.StatusBadGateway, Type: "routing_error", Code: "route_decision_failed", Message: err.Error(), Retryable: true})
+		return
+	}
+	if err := provider.ValidateFormatCompatibility(decision.Provider.Type, provider.APIFormatOpenAI); err != nil {
+		writeGatewayError(w, &gatewayError{HTTPStatus: http.StatusBadGateway, Type: "format_error", Code: "format_incompatible", Message: err.Error(), Provider: decision.Provider.Name, Retryable: false})
 		return
 	}
 	if err := ensureKeyAllowed(localKey, decision.Provider, decision.Model); err != nil {
@@ -25,16 +31,10 @@ func (r *Router) handleChatCompletionsStream(w http.ResponseWriter, req *http.Re
 		return
 	}
 
-	requestBytes, err := json.Marshal(payload)
-	if err != nil {
-		writeGatewayError(w, &gatewayError{HTTPStatus: http.StatusInternalServerError, Type: "gateway_error", Code: "request_marshal_failed", Message: err.Error(), Provider: decision.Provider.Name, Retryable: false})
-		return
-	}
-
 	// Inject stream_options so upstream includes usage in the final SSE chunk
 	requestBytes = injectStreamOptions(requestBytes)
 
-	trace := newRequestTrace(decision.Provider.Name, payload.Model, decision.Model, "openai_stream")
+	trace := newRequestTrace(decision.Provider.Name, meta.Model, decision.Model, "openai_stream")
 	client := newOpenAIClient(r.deps.Config.Proxy.StreamTimeout)
 	startedAt := time.Now()
 	resp, err := client.ChatCompletions(req.Context(), decision.Provider, requestBytes)
@@ -97,7 +97,7 @@ func (r *Router) handleChatCompletionsStream(w http.ResponseWriter, req *http.Re
 
 	// Record usage if we got it from the stream
 	if streamUsage.Usage.PromptTokens > 0 || streamUsage.Usage.CompletionTokens > 0 {
-		recordUsageBestEffort(req.Context(), r.deps.Usage, r.deps.Pricing, r.deps.Keys, localKey.ID, decision.Provider.ID, payload.Model, decision.Model, "openai_stream", time.Since(startedAt).Milliseconds(), true, streamUsage)
+		recordUsageBestEffort(req.Context(), r.deps.Usage, r.deps.Pricing, r.deps.Keys, localKey.ID, decision.Provider.ID, meta.Model, decision.Model, "openai_stream", time.Since(startedAt).Milliseconds(), true, streamUsage)
 	}
 	logRequestBestEffort(req.Context(), r.deps.DB, localKey.ID, decision.Provider.ID, "/v1/chat/completions", req.Method, http.StatusOK, time.Since(startedAt).Milliseconds(), "", trace)
 }

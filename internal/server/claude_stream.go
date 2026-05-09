@@ -9,15 +9,16 @@ import (
 	"time"
 
 	"localgateway/internal/models"
+	"localgateway/internal/provider"
 	"localgateway/internal/routing"
 	"localgateway/internal/usage"
 )
 
-func (r *Router) handleClaudeMessagesStream(w http.ResponseWriter, req *http.Request, payload claudeMessagesRequest, localKey *models.LocalKey, decision *routing.Decision) {
-	trace := newRequestTrace(decision.Provider.Name, payload.Model, decision.Model, "claude_stream")
+func (r *Router) handleClaudeMessagesStream(w http.ResponseWriter, req *http.Request, requestBytes []byte, meta claudeMessagesMeta, localKey *models.LocalKey, decision *routing.Decision) {
+	trace := newRequestTrace(decision.Provider.Name, meta.Model, decision.Model, "claude_stream")
 	startedAt := time.Now()
 
-	responseBody, providerID, providerName, statusCode, fallbackTried, err := r.forwardClaudeStreamWithFallback(req, localKey, decision, payload)
+	responseBody, providerID, providerName, statusCode, fallbackTried, err := r.forwardClaudeStreamWithFallback(req, localKey, decision, requestBytes)
 	trace.Provider = providerName
 	trace.FallbackTried = fallbackTried
 	if err != nil {
@@ -102,7 +103,7 @@ func (r *Router) handleClaudeMessagesStream(w http.ResponseWriter, req *http.Req
 		_ = r.deps.Usage.Record(req.Context(), usage.RecordInput{
 			LocalKeyID:     localKey.ID,
 			ProviderID:     providerID,
-			ModelRequested: payload.Model,
+			ModelRequested: meta.Model,
 			ModelActual:    decision.Model,
 			APIFormat:      "claude_stream",
 			InputTokens:    streamInputTokens,
@@ -119,7 +120,7 @@ func (r *Router) handleClaudeMessagesStream(w http.ResponseWriter, req *http.Req
 	logRequestBestEffort(req.Context(), r.deps.DB, localKey.ID, providerID, "/v1/messages", req.Method, http.StatusOK, time.Since(startedAt).Milliseconds(), "", trace)
 }
 
-func (r *Router) forwardClaudeStreamWithFallback(req *http.Request, localKey *models.LocalKey, decision *routing.Decision, payload claudeMessagesRequest) (io.ReadCloser, string, string, int, []string, error) {
+func (r *Router) forwardClaudeStreamWithFallback(req *http.Request, localKey *models.LocalKey, decision *routing.Decision, requestBytes []byte) (io.ReadCloser, string, string, int, []string, error) {
 	client := newOpenAIClient(r.deps.Config.Proxy.StreamTimeout)
 	attempts := []models.Provider{decision.Provider}
 	fallbackTried := []string{}
@@ -136,11 +137,8 @@ func (r *Router) forwardClaudeStreamWithFallback(req *http.Request, localKey *mo
 		}
 	}
 
-	payload.Stream = true
-	requestBytes, marshalErr := json.Marshal(payload)
-	if marshalErr != nil {
-		return nil, decision.Provider.ID, decision.Provider.Name, http.StatusInternalServerError, fallbackTried, &gatewayError{HTTPStatus: http.StatusInternalServerError, Type: "gateway_error", Code: "request_marshal_failed", Message: marshalErr.Error(), Provider: decision.Provider.Name, Retryable: false}
-	}
+	// Inject stream:true into the raw request bytes for streaming
+	streamBytes := injectClaudeStream(requestBytes)
 
 	var lastErr error
 	for index, attempt := range attempts {
@@ -148,7 +146,14 @@ func (r *Router) forwardClaudeStreamWithFallback(req *http.Request, localKey *mo
 			lastErr = err
 			continue
 		}
-		resp, err := client.ClaudeMessages(req.Context(), attempt, requestBytes)
+		if err := provider.ValidateFormatCompatibility(attempt.Type, provider.APIFormatClaude); err != nil {
+			lastErr = &gatewayError{HTTPStatus: http.StatusBadGateway, Type: "format_error", Code: "format_incompatible", Message: err.Error(), Provider: attempt.Name, Retryable: false}
+			if index > 0 {
+				fallbackTried = append(fallbackTried, attempt.Name)
+			}
+			continue
+		}
+		resp, err := client.ClaudeMessages(req.Context(), attempt, streamBytes)
 		if err != nil {
 			lastErr = err
 			if index > 0 {
@@ -175,4 +180,18 @@ func (r *Router) forwardClaudeStreamWithFallback(req *http.Request, localKey *mo
 		lastErr = &gatewayError{HTTPStatus: http.StatusBadGateway, Type: "provider_error", Code: "no_available_provider", Message: "没有可用的 Provider 完成 Claude 流式请求", Retryable: true}
 	}
 	return nil, decision.Provider.ID, decision.Provider.Name, http.StatusBadGateway, fallbackTried, lastErr
+}
+
+// injectClaudeStream sets stream:true in the raw JSON request while preserving all other fields.
+func injectClaudeStream(requestBytes []byte) []byte {
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(requestBytes, &m); err != nil {
+		return requestBytes
+	}
+	m["stream"] = json.RawMessage(`true`)
+	out, err := json.Marshal(m)
+	if err != nil {
+		return requestBytes
+	}
+	return out
 }

@@ -7,34 +7,48 @@ import (
 	"time"
 
 	"localgateway/internal/models"
+	"localgateway/internal/provider"
 	"localgateway/internal/routing"
 )
 
-type chatCompletionRequest struct {
-	Model    string `json:"model"`
-	Stream   bool   `json:"stream"`
-	Messages []struct {
-		Role    string `json:"role"`
-		Content string `json:"content"`
-	} `json:"messages"`
+// chatCompletionMeta extracts only the fields needed for gateway routing logic.
+// All other fields (temperature, top_p, tools, response_format, max_tokens, etc.)
+// are preserved in the raw body for passthrough.
+type chatCompletionMeta struct {
+	Model  string `json:"model"`
+	Stream bool   `json:"stream"`
 }
 
 func (r *Router) handleChatCompletions(w http.ResponseWriter, req *http.Request) {
-	var payload chatCompletionRequest
-	if err := decodeJSON(req, &payload); err != nil {
+	// Read the raw body — this preserves ALL fields for passthrough
+	requestBytes, err := readRequestBody(req)
+	if err != nil {
+		writeGatewayError(w, &gatewayError{HTTPStatus: http.StatusBadRequest, Type: "request_error", Code: "invalid_body", Message: err.Error(), Retryable: false})
+		return
+	}
+
+	// Extract only the fields needed for routing decisions
+	var meta chatCompletionMeta
+	if err := json.Unmarshal(requestBytes, &meta); err != nil {
 		writeGatewayError(w, &gatewayError{HTTPStatus: http.StatusBadRequest, Type: "request_error", Code: "invalid_json", Message: err.Error(), Retryable: false})
 		return
 	}
-	if payload.Model == "" {
+	if meta.Model == "" {
 		writeGatewayError(w, &gatewayError{HTTPStatus: http.StatusBadRequest, Type: "request_error", Code: "model_required", Message: "model 不能为空", Retryable: false})
 		return
 	}
-	if len(payload.Messages) == 0 {
+	// Validate messages exist
+	var hasMessages struct {
+		Messages []json.RawMessage `json:"messages"`
+	}
+	_ = json.Unmarshal(requestBytes, &hasMessages)
+	if len(hasMessages.Messages) == 0 {
 		writeGatewayError(w, &gatewayError{HTTPStatus: http.StatusBadRequest, Type: "request_error", Code: "messages_required", Message: "messages 不能为空", Retryable: false})
 		return
 	}
-	if payload.Stream {
-		r.handleChatCompletionsStream(w, req, payload)
+
+	if meta.Stream {
+		r.handleChatCompletionsStream(w, req, requestBytes, meta)
 		return
 	}
 
@@ -44,18 +58,13 @@ func (r *Router) handleChatCompletions(w http.ResponseWriter, req *http.Request)
 		return
 	}
 
-	decision, err := r.deps.Routing.Decide(req.Context(), payload.Model)
+	decision, err := r.deps.Routing.Decide(req.Context(), meta.Model)
 	if err != nil {
 		writeGatewayError(w, &gatewayError{HTTPStatus: http.StatusBadGateway, Type: "routing_error", Code: "route_decision_failed", Message: err.Error(), Retryable: true})
 		return
 	}
 
-	trace := newRequestTrace(decision.Provider.Name, payload.Model, decision.Model, "openai")
-	requestBytes, err := json.Marshal(payload)
-	if err != nil {
-		writeGatewayError(w, &gatewayError{HTTPStatus: http.StatusInternalServerError, Type: "gateway_error", Code: "request_marshal_failed", Message: err.Error(), Provider: decision.Provider.Name, Retryable: false})
-		return
-	}
+	trace := newRequestTrace(decision.Provider.Name, meta.Model, decision.Model, "openai")
 
 	responseBytes, providerID, providerName, upstream, statusCode, latencyMS, fallbackTried, err := r.forwardChatWithFallback(req, localKey, decision, requestBytes)
 	trace.Provider = providerName
@@ -66,7 +75,7 @@ func (r *Router) handleChatCompletions(w http.ResponseWriter, req *http.Request)
 		return
 	}
 
-	recordUsageBestEffort(req.Context(), r.deps.Usage, r.deps.Pricing, r.deps.Keys, localKey.ID, providerID, payload.Model, decision.Model, "openai", latencyMS, true, upstream)
+	recordUsageBestEffort(req.Context(), r.deps.Usage, r.deps.Pricing, r.deps.Keys, localKey.ID, providerID, meta.Model, decision.Model, "openai", latencyMS, true, upstream)
 	logRequestBestEffort(req.Context(), r.deps.DB, localKey.ID, providerID, "/v1/chat/completions", req.Method, http.StatusOK, latencyMS, "", trace)
 
 	w.Header().Set("Content-Type", "application/json")
@@ -98,6 +107,14 @@ func (r *Router) forwardChatWithFallback(req *http.Request, localKey *models.Loc
 	for index, attempt := range attempts {
 		if err := ensureKeyAllowed(localKey, attempt, decision.Model); err != nil {
 			lastErr = err
+			continue
+		}
+		// Check format compatibility: OpenAI format only works with OpenAI-compatible providers
+		if err := provider.ValidateFormatCompatibility(attempt.Type, provider.APIFormatOpenAI); err != nil {
+			lastErr = &gatewayError{HTTPStatus: http.StatusBadGateway, Type: "format_error", Code: "format_incompatible", Message: err.Error(), Provider: attempt.Name, Retryable: false}
+			if index > 0 {
+				fallbackTried = append(fallbackTried, attempt.Name)
+			}
 			continue
 		}
 		resp, err := client.ChatCompletions(req.Context(), attempt, requestBytes)

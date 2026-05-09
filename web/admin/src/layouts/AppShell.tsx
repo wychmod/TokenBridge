@@ -4,18 +4,26 @@ import {
   BarChart3,
   Bell,
   DollarSign,
+  FileCheck2,
+  Hash,
   KeyRound,
   LayoutDashboard,
+  LockKeyhole,
   Maximize2,
   Minimize2,
   Minus,
   Moon,
   Network,
+  PackageCheck,
+  Rocket,
   Route,
   ScrollText,
   Settings,
+  ShieldCheck,
+  Sparkles,
   Sun,
   SunMoon,
+  WandSparkles,
   X
 } from "lucide-react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
@@ -47,15 +55,24 @@ import {
 } from "../utils/desktop-bridge";
 
 const navItems = [
-  { to: "/dashboard", label: "总台", icon: LayoutDashboard },
-  { to: "/providers", label: "厂商", icon: Network },
-  { to: "/keys", label: "密钥", icon: KeyRound },
-  { to: "/routing", label: "路由", icon: Route },
-  { to: "/analytics", label: "分析", icon: BarChart3 },
-  { to: "/logs", label: "日志", icon: ScrollText },
-  { to: "/pricing", label: "定价", icon: DollarSign },
-  { to: "/settings", label: "设置", icon: Settings }
+  { to: "/dashboard", label: "总台", icon: LayoutDashboard, group: "运营" },
+  { to: "/providers", label: "厂商", icon: Network, group: "运营" },
+  { to: "/keys", label: "密钥", icon: KeyRound, group: "运营" },
+  { to: "/routing", label: "路由", icon: Route, group: "运营" },
+  { to: "/analytics", label: "分析", icon: BarChart3, group: "运营" },
+  { to: "/logs", label: "日志", icon: ScrollText, group: "运营" },
+  { to: "/pricing", label: "定价", icon: DollarSign, group: "运营" },
+  { to: "/quick-setup", label: "接入助手", icon: Rocket, group: "交付" },
+  { to: "/bootstrap", label: "启用引导", icon: WandSparkles, group: "交付" },
+  { to: "/security", label: "安全", icon: LockKeyhole, group: "交付" },
+  { to: "/release-status", label: "发布", icon: PackageCheck, group: "交付" },
+  { to: "/version", label: "版本", icon: Hash, group: "交付" },
+  { to: "/build-checks", label: "检查", icon: FileCheck2, group: "交付" },
+  { to: "/bootstrap/success", label: "完成", icon: ShieldCheck, group: "交付", hidden: true },
+  { to: "/settings", label: "设置", icon: Settings, group: "系统" }
 ];
+
+const navGroups = ["运营", "交付", "系统"] as const;
 
 const themeMeta = {
   light: { label: "浅色", icon: Sun },
@@ -176,6 +193,7 @@ export function AppShell({ children }: PropsWithChildren) {
   const healthyProviders = providers.filter((provider) => provider.status === "healthy").length;
   const resolvedTheme = themeMeta[theme];
   const ThemeIcon = resolvedTheme.icon;
+  const deliveryPagesReady = ["/bootstrap", "/security", "/release-status", "/version", "/build-checks", "/quick-setup"].length;
 
   const handleToggleMaximise = () => {
     const next = !desktopMaximised;
@@ -232,18 +250,27 @@ export function AppShell({ children }: PropsWithChildren) {
         </div>
 
         <nav className="sidebar-nav">
-          {navItems.map((item) => {
-            const Icon = item.icon;
+          {navGroups.map((group) => {
+            const items = navItems.filter((item) => item.group === group && !item.hidden);
+            if (items.length === 0) return null;
             return (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                className={({ isActive }) => clsx("nav-item", isActive && "active")}
-                title={item.label}
-              >
-                <Icon size={18} className="nav-icon" />
-                <span className="nav-label">{item.label}</span>
-              </NavLink>
+              <div key={group} className="nav-group">
+                <span className="nav-group-label">{group}</span>
+                {items.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <NavLink
+                      key={item.to}
+                      to={item.to}
+                      className={({ isActive }) => clsx("nav-item", isActive && "active")}
+                      title={item.label}
+                    >
+                      <Icon size={18} className="nav-icon" />
+                      <span className="nav-label">{item.label}</span>
+                    </NavLink>
+                  );
+                })}
+              </div>
             );
           })}
         </nav>
@@ -252,6 +279,10 @@ export function AppShell({ children }: PropsWithChildren) {
           <div className="flex items-center gap-2">
             <span className="status-indicator" style={{ background: healthyProviders > 0 ? "var(--accent)" : "var(--text-tertiary)", boxShadow: healthyProviders > 0 ? "0 0 6px var(--accent-glow)" : "none" }} />
             <span>{healthyProviders}/{providers.length} 厂商在线</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Sparkles size={13} />
+            <span>{deliveryPagesReady} 项交付页</span>
           </div>
           {desktopStatus.desktopMode && (
             <button type="button" className="btn btn-ghost btn-sm" onClick={() => showDesktopWindow()} title="恢复窗口">

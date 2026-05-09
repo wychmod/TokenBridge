@@ -59,11 +59,14 @@ func (s *Service) Get(ctx context.Context, id string) (*models.Provider, error) 
 }
 
 func (s *Service) Create(ctx context.Context, input ProviderInput) (models.Provider, error) {
+	if err := ValidateType(input.Type); err != nil {
+		return models.Provider{}, err
+	}
 	modelsJSON, _ := json.Marshal(input.Models)
 	provider := models.Provider{
 		ID:              "prov_" + uuid.NewString(),
 		Name:            input.Name,
-		Type:            input.Type,
+		Type:            NormalizeType(input.Type),
 		BaseURL:         input.BaseURL,
 		APIKeyEncrypted: input.APIKey,
 		OrganizationID:  input.OrganizationID,
@@ -81,13 +84,16 @@ func (s *Service) Create(ctx context.Context, input ProviderInput) (models.Provi
 }
 
 func (s *Service) Update(ctx context.Context, id string, input ProviderInput) (models.Provider, error) {
+	if err := ValidateType(input.Type); err != nil {
+		return models.Provider{}, err
+	}
 	provider, err := s.Get(ctx, id)
 	if err != nil {
 		return models.Provider{}, err
 	}
 	modelsJSON, _ := json.Marshal(input.Models)
 	provider.Name = input.Name
-	provider.Type = input.Type
+	provider.Type = NormalizeType(input.Type)
 	provider.BaseURL = input.BaseURL
 	if input.APIKey != "" {
 		provider.APIKeyEncrypted = input.APIKey

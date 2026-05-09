@@ -419,12 +419,20 @@ function mapProviderStatus(record: ProviderApiRecord): ProviderRecord["status"] 
   return "healthy";
 }
 
+function normalizeProviderType(type?: string): string {
+  const value = (type ?? "").trim().toLowerCase();
+  if (["openai", "openai official", "openai官方", "openai 官方"].includes(value)) return "openai";
+  if (["openai-compatible", "openai compatible", "openai_compatible", "openai 兼容", "openai兼容", "deepseek", "deepseek compatible", "deepseek 兼容", "deepseek兼容"].includes(value)) return "openai-compatible";
+  if (["anthropic", "claude", "anthropic compatible", "anthropic 兼容", "anthropic兼容", "anthropic official", "anthropic 官方", "anthropic官方"].includes(value)) return "anthropic";
+  return type ?? "openai-compatible";
+}
+
 function mapProviderFromApi(record: ProviderApiRecord): ProviderRecord {
   const models = parseJSONList(record.models_json);
   return {
     id: record.id,
     name: labelFromMap(providerNameLabelMap, record.name),
-    type: labelFromMap(providerTypeLabelMap, record.type),
+    type: normalizeProviderType(record.type),
     base_url: record.base_url,
     baseURL: record.base_url ?? "",
     organization_id: record.organization_id,
@@ -443,7 +451,7 @@ function mapProviderFromApi(record: ProviderApiRecord): ProviderRecord {
 function mapProviderToApi(record: ProviderRecord) {
   return {
     name: record.name,
-    type: valueFromLabel(providerTypeLabelMap, record.type),
+    type: normalizeProviderType(valueFromLabel(providerTypeLabelMap, record.type)),
     base_url: record.baseURL,
     api_key: record.apiKey ?? "",
     organization_id: record.organization_id ?? "",

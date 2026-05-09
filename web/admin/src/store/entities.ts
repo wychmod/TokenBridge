@@ -125,7 +125,7 @@ export const providerRecords: ProviderRecord[] = [
   {
     id: "prov-deepseek-saver",
     name: "DeepSeek Saver",
-    type: "deepseek",
+    type: "openai-compatible",
     baseURL: "https://api.deepseek.com",
     enabled: true,
     status: "warning",

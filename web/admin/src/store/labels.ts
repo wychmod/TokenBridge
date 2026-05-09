@@ -56,9 +56,9 @@ export const providerNameLabelMap: Record<string, string> = {
 };
 
 export const providerTypeLabelMap: Record<string, string> = {
-  openai: "OpenAI 兼容",
-  anthropic: "Anthropic 兼容",
-  deepseek: "DeepSeek 兼容"
+  openai: "OpenAI",
+  "openai-compatible": "OpenAI 兼容",
+  anthropic: "Anthropic (Claude)"
 };
 
 export function labelFromMap(map: Record<string, string>, value?: string): string {

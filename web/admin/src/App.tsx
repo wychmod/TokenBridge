@@ -8,6 +8,13 @@ import { AnalyticsPage } from "./pages/AnalyticsPage";
 import { LogsPage } from "./pages/LogsPage";
 import { PricingPage } from "./pages/PricingPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { BootstrapPage } from "./pages/BootstrapPage";
+import { BootstrapSuccessPage } from "./pages/BootstrapSuccessPage";
+import { SecurityPage } from "./pages/SecurityPage";
+import { ReleaseStatusPage } from "./pages/ReleaseStatusPage";
+import { VersionInfoPage } from "./pages/VersionInfoPage";
+import { BuildChecksPage } from "./pages/BuildChecksPage";
+import { QuickSetupPage } from "./pages/QuickSetupPage";
 
 export default function App() {
   return (
@@ -22,6 +29,13 @@ export default function App() {
         <Route path="/logs" element={<LogsPage />} />
         <Route path="/pricing" element={<PricingPage />} />
         <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/bootstrap" element={<BootstrapPage />} />
+        <Route path="/bootstrap/success" element={<BootstrapSuccessPage />} />
+        <Route path="/security" element={<SecurityPage />} />
+        <Route path="/release-status" element={<ReleaseStatusPage />} />
+        <Route path="/version" element={<VersionInfoPage />} />
+        <Route path="/build-checks" element={<BuildChecksPage />} />
+        <Route path="/quick-setup" element={<QuickSetupPage />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </AppShell>

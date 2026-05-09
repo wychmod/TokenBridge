@@ -78,6 +78,7 @@ func (r *Router) mount() {
 		adminRouter.Get("/overview", r.handleAdminOverview)
 
 		adminRouter.Get("/providers", r.handleProviders)
+		adminRouter.Get("/providers/types", r.handleProviderTypes)
 		adminRouter.Post("/providers", r.handleCreateProvider)
 		adminRouter.Put("/providers/{id}", r.handleUpdateProvider)
 		adminRouter.Delete("/providers/{id}", r.handleDeleteProvider)

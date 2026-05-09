@@ -40,6 +40,11 @@ func (r *Router) handleCreateProvider(w http.ResponseWriter, req *http.Request) 
 	if !ok {
 		return
 	}
+	// Validate type early for better HTTP status
+	if err := provider.ValidateType(payload.Type); err != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
 	created, err := r.deps.Providers.Create(req.Context(), payload)
 	if err != nil {
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -51,6 +56,11 @@ func (r *Router) handleCreateProvider(w http.ResponseWriter, req *http.Request) 
 func (r *Router) handleUpdateProvider(w http.ResponseWriter, req *http.Request) {
 	payload, ok := decodeProviderPayload(w, req)
 	if !ok {
+		return
+	}
+	// Validate type early for better HTTP status
+	if err := provider.ValidateType(payload.Type); err != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 	updated, err := r.deps.Providers.Update(req.Context(), chi.URLParam(req, "id"), payload)
@@ -98,6 +108,34 @@ func (r *Router) handleReorderProviders(w http.ResponseWriter, req *http.Request
 		return
 	}
 	respondJSON(w, http.StatusOK, map[string]any{"status": "ok"})
+}
+
+func (r *Router) handleProviderTypes(w http.ResponseWriter, req *http.Request) {
+	typeInfo := make([]map[string]any, 0, len(provider.KnownProviderTypes))
+	for _, t := range provider.KnownProviderTypes {
+		entry := map[string]any{
+			"value": t,
+			"label": providerTypeLabel(t),
+		}
+		if defaults, ok := provider.GetDefaults(t); ok && defaults.BaseURL != "" {
+			entry["default_base_url"] = defaults.BaseURL
+		}
+		typeInfo = append(typeInfo, entry)
+	}
+	respondJSON(w, http.StatusOK, map[string]any{"data": typeInfo})
+}
+
+func providerTypeLabel(t string) string {
+	switch t {
+	case provider.TypeOpenAI:
+		return "OpenAI"
+	case provider.TypeOpenAICompatible:
+		return "OpenAI 兼容"
+	case provider.TypeAnthropic:
+		return "Anthropic (Claude)"
+	default:
+		return t
+	}
 }
 
 func decodeProviderPayload(w http.ResponseWriter, req *http.Request) (provider.ProviderInput, bool) {

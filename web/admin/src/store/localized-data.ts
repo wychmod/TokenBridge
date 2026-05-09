@@ -16,16 +16,9 @@ export const providerRecordsLocalized: ProviderRecord[] = providerRecords.map((p
     "DeepSeek Saver": "DeepSeek 节省线路"
   };
 
-  const typeMap: Record<string, string> = {
-    openai: "OpenAI 兼容",
-    anthropic: "Anthropic 官方",
-    deepseek: "DeepSeek 官方"
-  };
-
   return {
     ...provider,
-    name: nameMap[provider.name] ?? provider.name,
-    type: typeMap[provider.type] ?? provider.type
+    name: nameMap[provider.name] ?? provider.name
   };
 });
 

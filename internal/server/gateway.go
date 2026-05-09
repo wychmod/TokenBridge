@@ -15,6 +15,7 @@ import (
 	"localgateway/internal/auth"
 	"localgateway/internal/models"
 	"localgateway/internal/pricing"
+	providerpkg "localgateway/internal/provider"
 	"localgateway/internal/usage"
 )
 
@@ -80,11 +81,10 @@ func newOpenAIClient(timeoutSeconds int) *openAIClient {
 }
 
 func (c *openAIClient) PostJSON(ctx context.Context, provider models.Provider, path string, payload []byte, extraHeaders map[string]string) (*http.Response, error) {
-	baseURL := strings.TrimRight(provider.BaseURL, "/")
-	if baseURL == "" {
-		return nil, &gatewayError{HTTPStatus: http.StatusBadGateway, Type: "provider_error", Code: "provider_base_url_missing", Message: "Provider 未配置 base_url", Provider: provider.Name, Retryable: false}
+	endpoint, err := buildProviderEndpoint(provider.BaseURL, path)
+	if err != nil {
+		return nil, &gatewayError{HTTPStatus: http.StatusBadGateway, Type: "provider_error", Code: "provider_base_url_missing", Message: err.Error(), Provider: provider.Name, Retryable: false}
 	}
-	endpoint := baseURL + path
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
 	if err != nil {
 		return nil, &gatewayError{HTTPStatus: http.StatusInternalServerError, Type: "gateway_error", Code: "request_build_failed", Message: err.Error(), Provider: provider.Name, Retryable: false}
@@ -113,10 +113,29 @@ func (c *openAIClient) ChatCompletions(ctx context.Context, provider models.Prov
 
 func (c *openAIClient) ClaudeMessages(ctx context.Context, provider models.Provider, payload []byte) (*http.Response, error) {
 	headers := map[string]string{"anthropic-version": "2023-06-01"}
-	if strings.EqualFold(provider.Type, "anthropic") {
+	if providerpkg.IsAnthropic(provider.Type) {
 		headers["x-api-key"] = provider.APIKeyEncrypted
 	}
 	return c.PostJSON(ctx, provider, "/v1/messages", payload, headers)
+}
+
+// buildProviderEndpoint appends the API operation path without duplicating /v1.
+// It supports both root-style base URLs (https://api.example.com) and versioned
+// base URLs (https://api.example.com/v1). Claude-compatible provider prefixes
+// such as https://api.minimaxi.com/anthropic are also supported.
+func buildProviderEndpoint(baseURL string, operationPath string) (string, error) {
+	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if base == "" {
+		return "", fmt.Errorf("Provider 未配置 base_url")
+	}
+	operation := strings.TrimLeft(operationPath, "/")
+	if operation == "" {
+		return base, nil
+	}
+	if strings.HasSuffix(base, "/v1") && strings.HasPrefix(operation, "v1/") {
+		operation = strings.TrimPrefix(operation, "v1/")
+	}
+	return base + "/" + operation, nil
 }
 
 func writeGatewayError(w http.ResponseWriter, err error) {
