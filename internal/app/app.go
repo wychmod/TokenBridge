@@ -8,6 +8,7 @@ import (
 	"gorm.io/gorm"
 
 	"localgateway/internal/admin"
+	"localgateway/internal/aitoolusage"
 	"localgateway/internal/auth"
 	"localgateway/internal/config"
 	"localgateway/internal/paths"
@@ -34,6 +35,7 @@ type Application struct {
 	Settings    *settings.Service
 	Admin       *admin.Service
 	RequestLogs *requestlog.Service
+	AIToolUsage *aitoolusage.Service
 }
 
 func New() (*Application, error) {
@@ -74,6 +76,7 @@ func New() (*Application, error) {
 	routingService := routing.NewService(db, providerService, cfg.Routing.DefaultStrategy)
 	settingsService := settings.NewService(db)
 	pricingService := pricing.NewService(db, logger)
+	aiToolUsageService := aitoolusage.NewService(db, pricingService, logger)
 	adminService := admin.NewService(providerService, keyService, usageService, pricingService, routingService, settingsService, requestLogService)
 
 	application := &Application{
@@ -88,6 +91,7 @@ func New() (*Application, error) {
 		Settings:    settingsService,
 		Admin:       adminService,
 		RequestLogs: requestLogService,
+		AIToolUsage: aiToolUsageService,
 	}
 
 	// Ensure first startup has local pricing data from the embedded snapshot, then update remotely in the background.
@@ -99,6 +103,13 @@ func New() (*Application, error) {
 	}
 	go func() {
 		pricingService.SyncBestEffort(context.Background())
+	}()
+	go func() {
+		if result, err := aiToolUsageService.Scan(context.Background()); err != nil {
+			logger.Warn().Err(err).Msg("ai tool usage: startup scan failed")
+		} else {
+			logger.Info().Int("files", result.FilesScanned).Int64("created", result.RecordsCreated).Msg("ai tool usage: startup scan complete")
+		}
 	}()
 
 	application.Router = server.NewRouter(server.Dependencies{
@@ -112,6 +123,7 @@ func New() (*Application, error) {
 		Settings:    settingsService,
 		Admin:       adminService,
 		RequestLogs: requestLogService,
+		AIToolUsage: aiToolUsageService,
 		DB:          db,
 	})
 

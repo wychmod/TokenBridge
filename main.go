@@ -123,7 +123,7 @@ func main() {
 		DisableResize:    false,
 		Fullscreen:       false,
 		StartHidden:      false,
-		BackgroundColour: &options.RGBA{R: 10, G: 14, B: 23, A: 1},
+		BackgroundColour: &options.RGBA{R: 23, G: 26, B: 33, A: 1},
 		AssetServer: &assetserver.Options{
 			Assets:  buildembed.AdminAssetsFS(),
 			Handler: proxy,

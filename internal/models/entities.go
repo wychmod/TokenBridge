@@ -109,3 +109,41 @@ type ModelPricing struct {
 	SupportsPromptCaching     bool      `json:"supports_prompt_caching"`
 	FetchedAt                 time.Time `json:"fetched_at"`
 }
+
+type AICodingUsageRecord struct {
+	ID                  string    `json:"id" gorm:"primaryKey"`
+	Tool                string    `json:"tool" gorm:"index"`
+	SessionID           string    `json:"session_id" gorm:"index"`
+	RequestID           string    `json:"request_id" gorm:"index"`
+	ProjectPath         string    `json:"project_path" gorm:"index"`
+	ProjectName         string    `json:"project_name"`
+	Model               string    `json:"model" gorm:"index"`
+	InputTokens         int64     `json:"input_tokens"`
+	OutputTokens        int64     `json:"output_tokens"`
+	CacheCreationTokens int64     `json:"cache_creation_tokens"`
+	CacheReadTokens     int64     `json:"cache_read_tokens"`
+	TotalTokens         int64     `json:"total_tokens"`
+	TotalCostUSD        float64   `json:"total_cost_usd"`
+	PricingMatched      bool      `json:"pricing_matched"`
+	PricingFallback     string    `json:"pricing_fallback"`
+	SourcePath          string    `json:"source_path" gorm:"index"`
+	SourceOffset        int64     `json:"source_offset"`
+	RawJSON             string    `json:"raw_json"`
+	OccurredAt          time.Time `json:"occurred_at" gorm:"index"`
+	CreatedAt           time.Time `json:"created_at"`
+}
+
+type AICodingLogSource struct {
+	ID             string    `json:"id" gorm:"primaryKey"`
+	Tool           string    `json:"tool" gorm:"index"`
+	Path           string    `json:"path" gorm:"uniqueIndex"`
+	Size           int64     `json:"size"`
+	ModTime        time.Time `json:"mod_time"`
+	ParserVersion  int       `json:"parser_version"`
+	LastScannedAt  time.Time `json:"last_scanned_at"`
+	RecordsFound   int64     `json:"records_found"`
+	RecordsCreated int64     `json:"records_created"`
+	ErrorMessage   string    `json:"error_message"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}

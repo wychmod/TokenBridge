@@ -39,6 +39,17 @@ type LookupResult struct {
 	FallbackModel string               `json:"fallback_model,omitempty"`
 }
 
+type CostBreakdown struct {
+	InputUSD         float64 `json:"input_usd"`
+	OutputUSD        float64 `json:"output_usd"`
+	CacheCreationUSD float64 `json:"cache_creation_usd"`
+	CacheReadUSD     float64 `json:"cache_read_usd"`
+	TotalUSD         float64 `json:"total_usd"`
+	Matched          bool    `json:"matched"`
+	FallbackUsed     bool    `json:"fallback_used"`
+	FallbackModel    string  `json:"fallback_model,omitempty"`
+}
+
 type litellmModelEntry struct {
 	LitellmProvider             string  `json:"litellm_provider"`
 	Mode                        string  `json:"mode"`
@@ -140,11 +151,40 @@ func (s *Service) LookupWithFallback(ctx context.Context, modelID string) Lookup
 
 // CalculateCost computes the USD cost for a request given model pricing and token counts.
 func (s *Service) CalculateCost(ctx context.Context, modelID string, inputTokens, outputTokens int64) float64 {
-	p := s.LookupWithFallback(ctx, modelID).Pricing
+	return s.CalculateCostDetailed(ctx, modelID, inputTokens, outputTokens, 0, 0).TotalUSD
+}
+
+// CalculateCostDetailed computes request cost using the same local pricing cache as CalculateCost,
+// including prompt-cache write/read token rates when they are available.
+func (s *Service) CalculateCostDetailed(ctx context.Context, modelID string, inputTokens, outputTokens, cacheCreationTokens, cacheReadTokens int64) CostBreakdown {
+	lookup := s.LookupWithFallback(ctx, modelID)
+	p := lookup.Pricing
 	if p == nil {
-		return 0
+		return CostBreakdown{}
 	}
-	return float64(inputTokens)*p.InputCostPerToken + float64(outputTokens)*p.OutputCostPerToken
+	uncachedInput := inputTokens - cacheCreationTokens - cacheReadTokens
+	if uncachedInput < 0 {
+		uncachedInput = 0
+	}
+	cacheCreationRate := p.CacheCreationCostPerToken
+	if cacheCreationRate == 0 {
+		cacheCreationRate = p.InputCostPerToken
+	}
+	cacheReadRate := p.CacheReadCostPerToken
+	if cacheReadRate == 0 {
+		cacheReadRate = p.InputCostPerToken
+	}
+	breakdown := CostBreakdown{
+		InputUSD:         float64(uncachedInput) * p.InputCostPerToken,
+		OutputUSD:        float64(outputTokens) * p.OutputCostPerToken,
+		CacheCreationUSD: float64(cacheCreationTokens) * cacheCreationRate,
+		CacheReadUSD:     float64(cacheReadTokens) * cacheReadRate,
+		Matched:          lookup.Matched,
+		FallbackUsed:     lookup.FallbackUsed,
+		FallbackModel:    lookup.FallbackModel,
+	}
+	breakdown.TotalUSD = breakdown.InputUSD + breakdown.OutputUSD + breakdown.CacheCreationUSD + breakdown.CacheReadUSD
+	return breakdown
 }
 
 func (s *Service) lookupExactOrFuzzy(ctx context.Context, modelID string) *models.ModelPricing {

@@ -12,6 +12,7 @@ import (
 	"gorm.io/gorm"
 
 	"localgateway/internal/admin"
+	"localgateway/internal/aitoolusage"
 	"localgateway/internal/auth"
 	"localgateway/internal/config"
 	"localgateway/internal/pricing"
@@ -35,6 +36,7 @@ type Dependencies struct {
 	Settings    *settings.Service
 	Admin       *admin.Service
 	RequestLogs *requestlog.Service
+	AIToolUsage *aitoolusage.Service
 	DB          *gorm.DB
 }
 
@@ -76,6 +78,9 @@ func (r *Router) mount() {
 		adminRouter.Get("/analytics", r.handleAdminAnalytics)
 		adminRouter.Get("/logs", r.handleAdminLogs)
 		adminRouter.Get("/overview", r.handleAdminOverview)
+		adminRouter.Get("/ai-tool-usage", r.handleAIToolUsage)
+		adminRouter.Post("/ai-tool-usage/scan", r.handleAIToolUsageScan)
+		adminRouter.Get("/ai-tool-usage/export", r.handleAIToolUsageExport)
 
 		adminRouter.Get("/providers", r.handleProviders)
 		adminRouter.Get("/providers/types", r.handleProviderTypes)

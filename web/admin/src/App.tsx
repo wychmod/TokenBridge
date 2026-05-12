@@ -5,6 +5,7 @@ import { ProvidersPage } from "./pages/ProvidersPage";
 import { KeysPage } from "./pages/KeysPage";
 import { RoutingPage } from "./pages/RoutingPage";
 import { AnalyticsPage } from "./pages/AnalyticsPage";
+import { AIToolUsagePage } from "./pages/AIToolUsagePage";
 import { LogsPage } from "./pages/LogsPage";
 import { PricingPage } from "./pages/PricingPage";
 import { SettingsPage } from "./pages/SettingsPage";
@@ -26,6 +27,7 @@ export default function App() {
         <Route path="/keys" element={<KeysPage />} />
         <Route path="/routing" element={<RoutingPage />} />
         <Route path="/analytics" element={<AnalyticsPage />} />
+        <Route path="/ai-tool-usage" element={<AIToolUsagePage />} />
         <Route path="/logs" element={<LogsPage />} />
         <Route path="/pricing" element={<PricingPage />} />
         <Route path="/settings" element={<SettingsPage />} />
