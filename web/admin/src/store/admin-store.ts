@@ -83,7 +83,7 @@ export const useAdminStore = create<AdminState>((set, get) => ({
     {
       id: 1,
       tone: "info",
-      title: "欢迎使用灵枢控制台",
+      title: "欢迎使用 TokenBridge 控制台",
       message: "当前界面已接入本地后端，配置变更会写入本地数据库。"
     }
   ],
@@ -477,7 +477,7 @@ function mapKeyFromApi(record: KeyApiRecord, rawKey?: string): LocalKeyRecord {
     id: record.id,
     name: record.name,
     display_key: record.display_key,
-    displayKey: rawKey ?? record.display_key ?? "lg-****",
+    displayKey: rawKey ?? record.display_key ?? "tb-****",
     allowed_models_json: record.allowed_models_json,
     allowed_providers_json: record.allowed_providers_json,
     allowedModels: parseJSONList(record.allowed_models_json),

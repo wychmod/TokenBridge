@@ -6,7 +6,7 @@ import { keyStatusMap } from "../store/labels";
 const createEmptyKey = () => ({
   id: `key-${Date.now()}`,
   name: "新本地密钥",
-  displayKey: `lg-${Math.random().toString(36).slice(2, 6)}****${Math.random().toString(36).slice(2, 6)}`,
+  displayKey: `tb-${Math.random().toString(36).slice(2, 6)}****${Math.random().toString(36).slice(2, 6)}`,
   allowedModels: [],
   allowedProviders: [],
   monthlyBudget: 100,

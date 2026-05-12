@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-const AppDirName = "LocalGateway"
+const AppDirName = "TokenBridge"
 
 type AppPaths struct {
 	BaseDir   string
@@ -31,7 +31,7 @@ func Resolve() (AppPaths, error) {
 		ConfigDir: configDir,
 		DataDir:   dataDir,
 		Config:    filepath.Join(configDir, "config.yaml"),
-		Database:  filepath.Join(dataDir, "localgateway.db"),
+		Database:  filepath.Join(dataDir, "tokenbridge.db"),
 	}, nil
 }
 
@@ -86,7 +86,7 @@ func MigrateLegacyDatabase(targetPath string) error {
 		return nil
 	}
 
-	legacyPath := filepath.Join("data", "localgateway.db")
+	legacyPath := filepath.Join("data", "tokenbridge.db")
 	if !fileExists(legacyPath) {
 		return nil
 	}
@@ -157,7 +157,7 @@ logging:
   log_prompts: false
 
 database:
-  path: "./data/localgateway.db"
+  path: "./data/tokenbridge.db"
   wal_mode: true
   auto_vacuum: true
   backup_interval: "24h"

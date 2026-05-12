@@ -12,11 +12,11 @@ import (
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
-	"localgateway/internal/auth"
-	"localgateway/internal/models"
-	"localgateway/internal/pricing"
-	providerpkg "localgateway/internal/provider"
-	"localgateway/internal/usage"
+	"tokenbridge/internal/auth"
+	"tokenbridge/internal/models"
+	"tokenbridge/internal/pricing"
+	providerpkg "tokenbridge/internal/provider"
+	"tokenbridge/internal/usage"
 )
 
 type openAIClient struct {

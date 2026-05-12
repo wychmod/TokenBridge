@@ -261,7 +261,7 @@ export function RoutingPage() {
                         className="form-control"
                         value={simulation.key}
                         onChange={(e) => setSimulation({ ...simulation, key: e.target.value })}
-                        placeholder="例如：lg-..."
+                        placeholder="例如：tb-..."
                       />
                     </div>
                     <div className="form-field">

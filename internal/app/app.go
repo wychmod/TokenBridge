@@ -7,19 +7,19 @@ import (
 	"github.com/rs/zerolog"
 	"gorm.io/gorm"
 
-	"localgateway/internal/admin"
-	"localgateway/internal/aitoolusage"
-	"localgateway/internal/auth"
-	"localgateway/internal/config"
-	"localgateway/internal/paths"
-	"localgateway/internal/pricing"
-	"localgateway/internal/provider"
-	"localgateway/internal/requestlog"
-	"localgateway/internal/routing"
-	"localgateway/internal/server"
-	"localgateway/internal/settings"
-	"localgateway/internal/storage"
-	"localgateway/internal/usage"
+	"tokenbridge/internal/admin"
+	"tokenbridge/internal/aitoolusage"
+	"tokenbridge/internal/auth"
+	"tokenbridge/internal/config"
+	"tokenbridge/internal/paths"
+	"tokenbridge/internal/pricing"
+	"tokenbridge/internal/provider"
+	"tokenbridge/internal/requestlog"
+	"tokenbridge/internal/routing"
+	"tokenbridge/internal/server"
+	"tokenbridge/internal/settings"
+	"tokenbridge/internal/storage"
+	"tokenbridge/internal/usage"
 )
 
 type Application struct {
@@ -44,7 +44,7 @@ func New() (*Application, error) {
 		return nil, err
 	}
 
-	cfgPath := os.Getenv("LG_CONFIG")
+	cfgPath := os.Getenv("TB_CONFIG")
 	if cfgPath == "" {
 		cfgPath, err = paths.EnsureUserConfig(appPaths)
 		if err != nil {
@@ -56,14 +56,14 @@ func New() (*Application, error) {
 	if err != nil {
 		return nil, err
 	}
-	cfg.Database.Path = paths.ResolveUserDataPath(appPaths, cfg.Database.Path, "data/localgateway.db")
+	cfg.Database.Path = paths.ResolveUserDataPath(appPaths, cfg.Database.Path, "data/tokenbridge.db")
 	cfg.Security.EncryptionKeyFile = paths.ResolveUserDataPath(appPaths, cfg.Security.EncryptionKeyFile, ".secret")
 
 	if err := paths.MigrateLegacyDatabase(cfg.Database.Path); err != nil {
 		return nil, err
 	}
 
-	logger := zerolog.New(os.Stdout).With().Timestamp().Str("service", "localgateway").Logger()
+	logger := zerolog.New(os.Stdout).With().Timestamp().Str("service", "tokenbridge").Logger()
 	db, err := storage.OpenDatabase(cfg.Database)
 	if err != nil {
 		return nil, err

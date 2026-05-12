@@ -8,8 +8,8 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"localgateway/internal/models"
-	"localgateway/internal/provider"
+	"tokenbridge/internal/models"
+	"tokenbridge/internal/provider"
 )
 
 type Decision struct {
@@ -228,4 +228,3 @@ func toJSON(values []string) string {
 	data, _ := json.Marshal(values)
 	return string(data)
 }
-

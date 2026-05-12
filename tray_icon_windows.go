@@ -4,5 +4,5 @@ package main
 
 import _ "embed"
 
-//go:embed cmd/localgateway/tray-icon.ico
+//go:embed cmd/tokenbridge/tray-icon.ico
 var trayIcon []byte

@@ -45,7 +45,7 @@ coverage/
 /release/*.exe
 
 # Local binary in repo root
-/localgateway.exe
+/tokenbridge.exe
 
 # WorkBuddy local state
 /.workbuddy/
@@ -57,5 +57,4 @@ coverage/
 
 # Explicitly track repository sources that may be shadowed by broad rules
 !/web/admin/package-lock.json
-
 

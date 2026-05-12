@@ -1,4 +1,4 @@
--- localgateway bootstrap migration
+-- tokenbridge bootstrap migration
 CREATE TABLE IF NOT EXISTS providers (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,

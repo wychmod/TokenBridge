@@ -1,13 +1,13 @@
-# 灵枢 Portable Package Builder
+# TokenBridge Portable Package Builder
 # Usage: powershell -File build/package.ps1
 
 $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
-$OutputDir   = Join-Path $ProjectRoot "build\portable\Lingshu"
-$PythonExe   = "C:\Users\Administrator.SY-202401060959\.workbuddy\binaries\python\envs\default\Scripts\python.exe"
+$OutputDir   = Join-Path $ProjectRoot "build\portable\TokenBridge"
+$PythonExe   = "python"
 $GoVersionInfoExe = Join-Path $env:USERPROFILE "go\bin\goversioninfo.exe"
 
-Write-Host "=== 灵枢 Portable Package Builder ===" -ForegroundColor Cyan
+Write-Host "=== TokenBridge Portable Package Builder ===" -ForegroundColor Cyan
 
 # Step 1: Generate app icons
 Write-Host "[1/5] Generating app icons..." -ForegroundColor Yellow
@@ -35,7 +35,7 @@ Copy-Item -Path (Join-Path $ProjectRoot "web\admin\dist\*") -Destination $EmbedD
 # Step 4: Build Go binary
 Write-Host "[4/5] Building Go binary..." -ForegroundColor Yellow
 Push-Location $ProjectRoot
-go build -ldflags="-H windowsgui" -o lingshu.exe ./cmd/localgateway
+go build -ldflags="-H windowsgui" -o tokenbridge.exe ./cmd/tokenbridge
 if ($LASTEXITCODE -ne 0) { Write-Host "Build failed!" -ForegroundColor Red; exit 1 }
 Pop-Location
 
@@ -44,7 +44,7 @@ Write-Host "[5/5] Assembling portable package..." -ForegroundColor Yellow
 if (Test-Path $OutputDir) { Remove-Item $OutputDir -Recurse -Force }
 New-Item -ItemType Directory -Path $OutputDir -Force | Out-Null
 
-Copy-Item (Join-Path $ProjectRoot "lingshu.exe") $OutputDir -Force
+Copy-Item (Join-Path $ProjectRoot "tokenbridge.exe") $OutputDir -Force
 Copy-Item (Join-Path $ProjectRoot "configs\config.example.yaml") (Join-Path $OutputDir "config.yaml") -Force
 
 Write-Host ""

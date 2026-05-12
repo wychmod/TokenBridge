@@ -7,7 +7,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"localgateway/internal/models"
+	"tokenbridge/internal/models"
 )
 
 type Service struct {
@@ -89,9 +89,9 @@ func (s *Service) Backup(ctx context.Context) map[string]any {
 
 func (s *Service) DistributionPlan() map[string]any {
 	return map[string]any{
-		"artifact": "lingshu.zip",
+		"artifact": "tokenbridge.zip",
 		"mode":     "download-and-run",
-		"contents": []string{"lingshu.exe", "config.yaml"},
+		"contents": []string{"tokenbridge.exe", "config.yaml"},
 		"notes": []string{
 			"配置和数据库会保存到当前系统用户目录",
 			"首次下载后即可运行",

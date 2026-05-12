@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"localgateway/internal/models"
-	"localgateway/internal/provider"
-	"localgateway/internal/routing"
-	"localgateway/internal/usage"
+	"tokenbridge/internal/models"
+	"tokenbridge/internal/provider"
+	"tokenbridge/internal/routing"
+	"tokenbridge/internal/usage"
 )
 
 func (r *Router) handleClaudeMessagesStream(w http.ResponseWriter, req *http.Request, requestBytes []byte, meta claudeMessagesMeta, localKey *models.LocalKey, decision *routing.Decision) {

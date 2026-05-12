@@ -19,14 +19,14 @@
     "FileSubType": "00"
   },
   "StringFileInfo": {
-    "Comments": "Lingshu Windows desktop gateway",
-    "CompanyName": "Lingshu",
-    "FileDescription": "灵枢本地模型网关",
+    "Comments": "TokenBridge Windows desktop gateway",
+    "CompanyName": "TokenBridge",
+    "FileDescription": "TokenBridge 本地模型网关",
     "FileVersion": "0.1.0",
-    "InternalName": "lingshu",
-    "LegalCopyright": "Copyright (c) Lingshu",
-    "OriginalFilename": "lingshu.exe",
-    "ProductName": "灵枢",
+    "InternalName": "tokenbridge",
+    "LegalCopyright": "Copyright (c) TokenBridge",
+    "OriginalFilename": "tokenbridge.exe",
+    "ProductName": "TokenBridge",
     "ProductVersion": "0.1.0"
   },
   "IconPath": "build/assets/app-icon.ico"

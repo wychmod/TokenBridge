@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"localgateway/internal/provider"
+	"tokenbridge/internal/provider"
 )
 
 // claudeMessagesMeta extracts only the fields needed for gateway routing logic.

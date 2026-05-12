@@ -2,7 +2,7 @@ package server
 
 import (
 	"net/http"
-	"localgateway/internal/settings"
+	"tokenbridge/internal/settings"
 )
 
 func (r *Router) handleGetSettings(w http.ResponseWriter, req *http.Request) {

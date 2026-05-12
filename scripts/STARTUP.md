@@ -1,4 +1,4 @@
-# LocalGateway 启动与分发说明
+# TokenBridge 启动与分发说明
 
 ## 当前状态
 
@@ -30,23 +30,23 @@
 ### 开发模式
 
 ```powershell
-cd D:\idea\localgateway
-D:\Go\bin\go.exe run .\cmd\localgateway
+cd D:\idea\tokenbridge
+D:\Go\bin\go.exe run .\cmd\tokenbridge
 ```
 
 ### 编译后启动
 
 ```powershell
-cd D:\idea\localgateway
-D:\Go\bin\go.exe build -o localgateway.exe .\cmd\localgateway
-.\localgateway.exe
+cd D:\idea\tokenbridge
+D:\Go\bin\go.exe build -o tokenbridge.exe .\cmd\tokenbridge
+.\tokenbridge.exe
 ```
 
 ### Portable 模式
 
 ```powershell
-cd D:\idea\localgateway\build\portable\LocalGateway
-.\localgateway.exe
+cd D:\idea\tokenbridge\build\portable\TokenBridge
+.\tokenbridge.exe
 ```
 
 访问地址：
@@ -60,14 +60,14 @@ http://127.0.0.1:18743/admin
 ## 打包方式
 
 ```powershell
-cd D:\idea\localgateway
+cd D:\idea\tokenbridge
 powershell -File build\package.ps1
 ```
 
 打包输出目录：
 
 ```text
-build/portable/LocalGateway/
+build/portable/TokenBridge/
 ```
 
 ---
@@ -75,8 +75,8 @@ build/portable/LocalGateway/
 ## Portable 目录结构
 
 ```text
-LocalGateway/
-├── localgateway.exe
+TokenBridge/
+├── tokenbridge.exe
 ├── config.yaml
 ├── data/
 ├── logs/
@@ -87,16 +87,20 @@ LocalGateway/
 
 ## 配置加载优先级
 
-1. `LG_CONFIG` 环境变量
+1. `TB_CONFIG` 环境变量
 2. 当前目录 `config.yaml`
 3. `configs/config.example.yaml`
 
 ---
 
-## 下一步建议
+## 维护检查
 
-1. 接通真实 Provider 出站请求
-2. 完成 SSE 流式转发
-3. 打通 Bootstrap / Security / Release / Version / Build Checks 真实状态接口
-4. 完成前后端真实联调
-5. 生成最终 ZIP 分发包
+改动启动、打包或嵌入资源后，至少执行：
+
+```powershell
+go test ./...
+cd web\admin
+npm run build
+```
+
+`npm run build` 会同步前端产物到 `build/embed/admin`，该目录属于生成物，不纳入版本管控。

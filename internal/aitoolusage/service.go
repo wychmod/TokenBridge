@@ -23,8 +23,8 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	"localgateway/internal/models"
-	"localgateway/internal/pricing"
+	"tokenbridge/internal/models"
+	"tokenbridge/internal/pricing"
 )
 
 const (

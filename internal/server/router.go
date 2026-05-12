@@ -11,18 +11,18 @@ import (
 	"github.com/rs/zerolog"
 	"gorm.io/gorm"
 
-	"localgateway/internal/admin"
-	"localgateway/internal/aitoolusage"
-	"localgateway/internal/auth"
-	"localgateway/internal/config"
-	"localgateway/internal/pricing"
-	"localgateway/internal/provider"
-	"localgateway/internal/requestlog"
-	"localgateway/internal/routing"
-	"localgateway/internal/settings"
-	"localgateway/internal/usage"
+	"tokenbridge/internal/admin"
+	"tokenbridge/internal/aitoolusage"
+	"tokenbridge/internal/auth"
+	"tokenbridge/internal/config"
+	"tokenbridge/internal/pricing"
+	"tokenbridge/internal/provider"
+	"tokenbridge/internal/requestlog"
+	"tokenbridge/internal/routing"
+	"tokenbridge/internal/settings"
+	"tokenbridge/internal/usage"
 
-	"localgateway/build/embed"
+	"tokenbridge/build/embed"
 )
 
 type Dependencies struct {

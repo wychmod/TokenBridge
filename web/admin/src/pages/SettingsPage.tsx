@@ -39,7 +39,7 @@ export function SettingsPage() {
     }
   }, []);
 
-  const currentKey = keys[0] ?? { name: "未加载", displayKey: "lg-****" };
+  const currentKey = keys[0] ?? { name: "未加载", displayKey: "tb-****" };
 
   const setups = [
     {
@@ -51,8 +51,8 @@ export function SettingsPage() {
       snippet: `{"apiUrl": "http://localhost:9090", "apiKey": "${currentKey.displayKey}"}`
     },
     {
-      name: "灵枢便携分发包",
-      snippet: "下载 lingshu.zip → 解压 → 运行 lingshu.exe → 打开 /admin 完成剩余配置"
+      name: "TokenBridge 便携分发包",
+      snippet: "下载 tokenbridge.zip → 解压 → 运行 tokenbridge.exe → 打开 /admin 完成剩余配置"
     }
   ];
 
@@ -377,7 +377,7 @@ export function SettingsPage() {
               <div>
                 <strong style={{ fontSize: "0.9rem" }}>分发包信息</strong>
                 <p style={{ fontSize: "0.8rem", color: "var(--text-secondary)", marginTop: 2 }}>
-                  {distributionPlan?.package_name ?? "lingshu.zip"} · {distributionPlan?.mode ?? "单目录分发"}
+                  {distributionPlan?.package_name ?? "tokenbridge.zip"} · {distributionPlan?.mode ?? "单目录分发"}
                 </p>
               </div>
               <button type="button" className="btn btn-secondary btn-sm" onClick={() => void reloadDistributionPlan()}>

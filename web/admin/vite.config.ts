@@ -8,7 +8,7 @@ export default defineConfig({
   plugins: [
     react(),
     {
-      name: "localgateway-wails-api-fallback",
+      name: "tokenbridge-wails-api-fallback",
       enforce: "pre",
       configureServer(server) {
         if (!isWailsDev) {

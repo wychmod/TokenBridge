@@ -43,7 +43,6 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("proxy.max_retries", 2)
 	v.SetDefault("proxy.retry_delay_ms", 500)
 	v.SetDefault("logging.level", "standard")
-	v.SetDefault("database.path", "./data/localgateway.db")
+	v.SetDefault("database.path", "./data/tokenbridge.db")
 	v.SetDefault("routing.default_strategy", "priority")
 }
-

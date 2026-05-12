@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"localgateway/internal/pricing"
+	"tokenbridge/internal/pricing"
 )
 
 type pricingHandlers struct {

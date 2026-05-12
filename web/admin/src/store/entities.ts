@@ -140,7 +140,7 @@ export const localKeyRecords: LocalKeyRecord[] = [
   {
     id: "key-codex",
     name: "Codex Pro",
-    displayKey: "lg-a3f8****9k2m",
+    displayKey: "tb-a3f8****9k2m",
     allowedModels: ["gpt-4o", "claude-sonnet-4"],
     allowedProviders: ["OpenAI Primary", "Claude Premium"],
     monthlyBudget: 150,
@@ -153,7 +153,7 @@ export const localKeyRecords: LocalKeyRecord[] = [
   {
     id: "key-cursor",
     name: "Cursor Team",
-    displayKey: "lg-b8d2****c1q9",
+    displayKey: "tb-b8d2****c1q9",
     allowedModels: ["gpt-4o-mini", "deepseek-chat"],
     allowedProviders: ["OpenAI Primary", "DeepSeek Saver"],
     monthlyBudget: 80,

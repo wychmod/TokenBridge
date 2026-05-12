@@ -6,7 +6,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"localgateway/internal/auth"
+	"tokenbridge/internal/auth"
 )
 
 type createKeyRequest struct {

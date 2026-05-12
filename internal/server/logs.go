@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"time"
 
-	"localgateway/internal/requestlog"
+	"tokenbridge/internal/requestlog"
 )
 
 func (r *Router) handleAdminLogs(w http.ResponseWriter, req *http.Request) {
@@ -70,7 +70,7 @@ func (r *Router) handleAdminLogsExport(w http.ResponseWriter, req *http.Request)
 		return
 	}
 
-	filename := "localgateway-logs-" + time.Now().Format("20060102-150405") + ".csv"
+	filename := "tokenbridge-logs-" + time.Now().Format("20060102-150405") + ".csv"
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 	w.Header().Set("Content-Disposition", "attachment; filename="+filename)
 	w.WriteHeader(http.StatusOK)

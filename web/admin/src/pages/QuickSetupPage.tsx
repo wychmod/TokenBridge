@@ -4,7 +4,7 @@ import { useAdminStore } from "../store/admin-store";
 
 export function QuickSetupPage() {
   const { keys, settings, pushNotice } = useAdminStore();
-  const currentKey = keys[0] ?? { name: "未配置密钥", displayKey: "lg-****" };
+  const currentKey = keys[0] ?? { name: "未配置密钥", displayKey: "tb-****" };
   const gatewayBase = `http://${settings.host === "0.0.0.0" ? "127.0.0.1" : settings.host}:${settings.port}`;
 
   const setups = [
@@ -17,8 +17,8 @@ export function QuickSetupPage() {
       snippet: `{"apiUrl": "${gatewayBase}", "apiKey": "${currentKey.displayKey}"}`
     },
     {
-      name: "灵枢便携分发包",
-      snippet: `解压分发包 → 运行 Lingshu.exe → 打开 ${gatewayBase}${settings.adminPath} → 完成 Provider 与 Local Key 配置`
+      name: "TokenBridge 便携分发包",
+      snippet: `解压分发包 → 运行 TokenBridge.exe → 打开 ${gatewayBase}${settings.adminPath} → 完成 Provider 与 Local Key 配置`
     }
   ];
 
@@ -35,7 +35,7 @@ export function QuickSetupPage() {
     <section className="panel quick-setup-page">
       <SectionHeader
         eyebrow="接入助手"
-        title="灵枢接入说明"
+        title="TokenBridge 接入说明"
         description="面向 Codex、Claude Desktop、Cursor 等工具生成接入模板，直接使用真实监听地址和当前首个 Local Key。"
         actions={
           <button

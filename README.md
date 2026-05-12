@@ -1,6 +1,6 @@
 <div align="center">
 
-# LocalGateway
+# TokenBridge
 
 **本地 AI 网关 · 多提供商调度中枢 · 可观测的模型访问控制平面**
 
@@ -22,7 +22,7 @@
 
 ## 项目简介
 
-LocalGateway 是一个面向本地部署、团队内网和私有化场景的 **AI 网关管理平台**。它将多 Provider 接入、本地密钥分发、模型路由、请求转发、故障转移、调用日志和用量分析收束到统一控制面，让应用只需要访问一个本地兼容接口，即可获得可治理、可观测、可回退的 AI 访问能力。
+TokenBridge 是一个面向本地部署、团队内网和私有化场景的 **AI 网关管理平台**。它将多 Provider 接入、本地密钥分发、模型路由、请求转发、故障转移、调用日志和用量分析收束到统一控制面，让应用只需要访问一个本地兼容接口，即可获得可治理、可观测、可回退的 AI 访问能力。
 
 它不是一个简单的 HTTP 代理，而是一个具备生产化边界的本地 AI 控制平面：
 
@@ -33,7 +33,7 @@ LocalGateway 是一个面向本地部署、团队内网和私有化场景的 **A
 - 实时记录 Trace、延迟、状态码、失败原因、备用切换链路和用量数据；
 - 提供 React + TypeScript 监控后台，面向日常运维、排障和容量分析。
 
-> **LocalGateway = Local AI Gateway + Routing Control Plane + Observability Console + Desktop-ready Distribution.**
+> **TokenBridge = Local AI Gateway + Routing Control Plane + Observability Console + Desktop-ready Distribution.**
 
 ## 核心特性
 
@@ -90,7 +90,7 @@ LocalGateway 是一个面向本地部署、团队内网和私有化场景的 **A
                                 │
                                 ▼
 ┌──────────────────────────────────────────────────────────────────────┐
-│                         LocalGateway API                             │
+│                         TokenBridge API                             │
 │  /v1/chat/completions      /v1/messages        /admin/api/*           │
 │  Local Key Auth            Request Trace       Embedded Admin UI      │
 └───────────────┬───────────────────────┬──────────────────────────────┘
@@ -133,7 +133,7 @@ LocalGateway 是一个面向本地部署、团队内网和私有化场景的 **A
 | Admin 聚合 | `internal/admin/service.go` | 汇总 Overview、Dashboard、Analytics、Provider Health、Alerts、热点模型和 Provider 排行。 |
 | 请求日志 | `internal/requestlog/service.go` | 查询、筛选、统计、Fallback 识别、失败趋势和 CSV 导出。 |
 | 用量统计 | `internal/usage/service.go` | 记录请求用量，生成 Provider / Model / Key 维度分析。 |
-| 浏览器版入口 | `cmd/localgateway/main.go` | HTTP Server、Windows 托盘、单实例检查、自动打开管理后台。 |
+| 浏览器版入口 | `cmd/tokenbridge/main.go` | HTTP Server、Windows 托盘、单实例检查、自动打开管理后台。 |
 | 桌面版入口 | `main.go`, `app.go` | Wails 窗口、SPA Proxy、桌面 Bindings、托盘菜单、自检与状态恢复。 |
 
 ## Dashboard 监控设计
@@ -182,8 +182,8 @@ Dashboard 目前包含：
 
 ```bash
 # 克隆仓库
-git clone <your-repo-url> localgateway
-cd localgateway
+git clone <your-repo-url> tokenbridge
+cd tokenbridge
 
 # 安装 Go 依赖
 go mod download
@@ -208,7 +208,7 @@ npm run build
 cd ../..
 
 # 启动服务
-go run ./cmd/localgateway
+go run ./cmd/tokenbridge
 ```
 
 启动后访问：
@@ -221,7 +221,7 @@ http://127.0.0.1:18743/admin
 
 ```bash
 # 终端 1：启动后端
-go run ./cmd/localgateway
+go run ./cmd/tokenbridge
 
 # 终端 2：启动前端开发服务器（热更新）
 cd web/admin
@@ -257,11 +257,11 @@ powershell -File build/package.ps1
 powershell -File build/desktop.ps1
 ```
 
-便携包输出到 `build/portable/Lingshu/`，包含：
-- `lingshu.exe`（Windows GUI 模式，常驻托盘）
+便携包输出到 `build/portable/TokenBridge/`，包含：
+- `tokenbridge.exe`（Windows GUI 模式，常驻托盘）
 - `config.yaml`（配置模板）
 
-桌面版输出到 `build/bin/Lingshu.exe`（Wails 原生窗口）。
+桌面版输出到 `build/bin/TokenBridge.exe`（Wails 原生窗口）。
 
 ### 5. macOS 打包
 
@@ -272,16 +272,16 @@ npm run build:wails
 cd ../..
 
 # Wails 桌面版
-wails build -platform darwin/universal -o Lingshu.app
+wails build -platform darwin/universal -o TokenBridge.app
 ```
 
-输出到 `build/bin/Lingshu.app`。
+输出到 `build/bin/TokenBridge.app`。
 
 如需生成 DMG：
 
 ```bash
 # 使用 create-dmg（需先 brew install create-dmg）
-create-dmg build/bin/Lingshu.app build/bin/
+create-dmg build/bin/TokenBridge.app build/bin/
 ```
 
 ## 构建与分发
@@ -290,8 +290,8 @@ create-dmg build/bin/Lingshu.app build/bin/
 
 `.github/workflows/build-desktop.yml` 支持：
 
-- Windows：输出 `LocalGateway.exe`
-- macOS：输出 `LocalGateway.app`
+- Windows：输出 `TokenBridge.exe`
+- macOS：输出 `TokenBridge.app`
 
 触发方式：
 
@@ -332,7 +332,7 @@ logging:
   log_prompts: false
 
 database:
-  path: "./data/localgateway.db"
+  path: "./data/tokenbridge.db"
   wal_mode: true
   auto_vacuum: true
   backup_interval: "24h"
@@ -371,8 +371,8 @@ local_keys: []
 
 | 变量 | 说明 |
 | --- | --- |
-| `LG_CONFIG` | 指定配置文件路径。 |
-| `LG_CONSOLE_MODE=1` | 强制 Windows 正式 exe 使用控制台模式运行，便于排障。 |
+| `TB_CONFIG` | 指定配置文件路径。 |
+| `TB_CONSOLE_MODE=1` | 强制 Windows 正式 exe 使用控制台模式运行，便于排障。 |
 
 ## API 参考
 
@@ -397,7 +397,7 @@ Content-Type: application/json
   "model": "gpt-4o-mini",
   "stream": false,
   "messages": [
-    { "role": "user", "content": "Hello from LocalGateway" }
+    { "role": "user", "content": "Hello from TokenBridge" }
   ]
 }
 ```
@@ -426,7 +426,7 @@ Content-Type: application/json
   "model": "claude-sonnet-4",
   "max_tokens": 1024,
   "messages": [
-    { "role": "user", "content": "Hello from LocalGateway" }
+    { "role": "user", "content": "Hello from TokenBridge" }
   ]
 }
 ```
@@ -486,7 +486,7 @@ Fallback 结果会写入请求日志 metadata，并在以下位置可见：
 
 ```text
 .
-├── cmd/localgateway/          # 浏览器 / 托盘版入口
+├── cmd/tokenbridge/          # 浏览器 / 托盘版入口
 ├── internal/                  # Go 后端服务与 HTTP handlers
 │   ├── admin/                 # Dashboard / Analytics 聚合
 │   ├── app/                   # 应用启动与依赖装配
@@ -514,8 +514,8 @@ Fallback 结果会写入请求日志 metadata，并在以下位置可见：
 
 ```bash
 # — 后端 —
-go run ./cmd/localgateway              # 启动浏览器版
-go build -o localgateway ./cmd/localgateway  # 编译二进制
+go run ./cmd/tokenbridge              # 启动浏览器版
+go build -o tokenbridge ./cmd/tokenbridge  # 编译二进制
 
 # — 前端 —
 cd web/admin
@@ -537,7 +537,7 @@ wails build -platform darwin/universal  # macOS 桌面版
 ## 生产运行说明
 
 - Windows 正式浏览器版默认隐藏控制台并常驻托盘。
-- `LG_CONSOLE_MODE=1` 可让正式 exe 以前台控制台运行，便于排查日志。
+- `TB_CONSOLE_MODE=1` 可让正式 exe 以前台控制台运行，便于排查日志。
 - 单实例 Mutex 会阻止重复启动；已有实例运行时，新进程会打开管理后台后退出。
 - 管理后台资源会嵌入 Go 二进制，分发时不需要额外 Web Server。
 - 请求日志以 Trace ID、Provider、状态码、耗时、Fallback、请求模型和实际模型为核心字段。
@@ -609,6 +609,6 @@ wails build -platform darwin/universal  # macOS 桌面版
 
 <div align="center">
 
-**LocalGateway** makes local AI access observable, governable, and failover-ready.
+**TokenBridge** makes local AI access observable, governable, and failover-ready.
 
 </div>

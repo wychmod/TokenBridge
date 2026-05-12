@@ -16,14 +16,14 @@ import (
 	"github.com/rs/zerolog"
 	"gorm.io/gorm"
 
-	"localgateway/internal/models"
-	"localgateway/internal/pricing"
+	"tokenbridge/internal/models"
+	"tokenbridge/internal/pricing"
 )
 
 func TestParseUsageFileExtractsNestedClaudeUsage(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "session.jsonl")
-	body := `{"session_id":"s1","cwd":"D:\\repo\\localgateway","message":{"id":"m1","model":"claude-3-5-sonnet","usage":{"input_tokens":1000,"output_tokens":200,"cache_creation_input_tokens":100,"cache_read_input_tokens":300}},"timestamp":"2026-05-12T10:00:00Z"}` + "\n"
+	body := `{"session_id":"s1","cwd":"D:\\repo\\tokenbridge","message":{"id":"m1","model":"claude-3-5-sonnet","usage":{"input_tokens":1000,"output_tokens":200,"cache_creation_input_tokens":100,"cache_read_input_tokens":300}},"timestamp":"2026-05-12T10:00:00Z"}` + "\n"
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +44,7 @@ func TestParseUsageFileExtractsNestedClaudeUsage(t *testing.T) {
 	if record.CacheCreationTokens != 100 || record.CacheReadTokens != 300 {
 		t.Fatalf("unexpected cache tokens: %+v", record)
 	}
-	if record.ProjectName != "localgateway" {
+	if record.ProjectName != "tokenbridge" {
 		t.Fatalf("unexpected project name: %s", record.ProjectName)
 	}
 }
@@ -75,7 +75,7 @@ func TestParseUsageFileUsesCodexLastTokenUsage(t *testing.T) {
 func TestParseUsageFileCarriesCodexContextAcrossLines(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "codex.jsonl")
-	body := `{"timestamp":"2026-05-12T04:00:00Z","type":"turn_context","payload":{"cwd":"D:\\idea\\localgateway","model":"gpt-5.4"}}` + "\n" +
+	body := `{"timestamp":"2026-05-12T04:00:00Z","type":"turn_context","payload":{"cwd":"D:\\idea\\tokenbridge","model":"gpt-5.4"}}` + "\n" +
 		`{"timestamp":"2026-05-12T04:01:00Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":1000,"cached_input_tokens":300,"output_tokens":200,"total_tokens":1200}}}}` + "\n"
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
@@ -91,7 +91,7 @@ func TestParseUsageFileCarriesCodexContextAcrossLines(t *testing.T) {
 	if record.Model != "gpt-5.4" {
 		t.Fatalf("expected model from prior context line, got %+v", record)
 	}
-	if record.ProjectName != "localgateway" {
+	if record.ProjectName != "tokenbridge" {
 		t.Fatalf("expected project from prior context line, got %+v", record)
 	}
 	if record.InputTokens != 1000 || record.CacheReadTokens != 300 {
@@ -288,7 +288,7 @@ func TestDashboardUsesLocalTimeWindowAndBuckets(t *testing.T) {
 	if err := db.Create(&models.AICodingUsageRecord{
 		ID:           "utc-evening",
 		Tool:         "Codex",
-		ProjectName:  "localgateway",
+		ProjectName:  "tokenbridge",
 		Model:        "gpt-5",
 		InputTokens:  100,
 		OutputTokens: 20,
@@ -328,8 +328,8 @@ func TestProjectSpendClearsToolWhenMixed(t *testing.T) {
 	svc.nowFunc = func() time.Time { return now }
 
 	rows := []models.AICodingUsageRecord{
-		{ID: "codex", Tool: "Codex", ProjectName: "localgateway", Model: "gpt-5", InputTokens: 100, TotalTokens: 100, OccurredAt: now, CreatedAt: now},
-		{ID: "claude", Tool: "Claude Code", ProjectName: "localgateway", Model: "claude", InputTokens: 100, TotalTokens: 100, OccurredAt: now, CreatedAt: now},
+		{ID: "codex", Tool: "Codex", ProjectName: "tokenbridge", Model: "gpt-5", InputTokens: 100, TotalTokens: 100, OccurredAt: now, CreatedAt: now},
+		{ID: "claude", Tool: "Claude Code", ProjectName: "tokenbridge", Model: "claude", InputTokens: 100, TotalTokens: 100, OccurredAt: now, CreatedAt: now},
 	}
 	if err := db.Create(&rows).Error; err != nil {
 		t.Fatal(err)

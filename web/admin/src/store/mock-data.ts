@@ -57,7 +57,7 @@ export const quickActions = [
 ];
 
 export const distributionStatus = {
-  artifact: "lingshu.zip",
+  artifact: "tokenbridge.zip",
   mode: "便携版 · 下载即用",
   bundle: "管理后台前端将内嵌至单一可执行文件",
   init: "首次启动自动初始化配置、数据与日志目录"

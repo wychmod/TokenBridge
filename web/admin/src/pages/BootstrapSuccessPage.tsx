@@ -13,7 +13,7 @@ export function BootstrapSuccessPage() {
       <article className="panel success-panel">
         <SectionHeader
           eyebrow="初始化完成"
-          title="灵枢已进入正式管理模式"
+          title="TokenBridge 已进入正式管理模式"
           description="基础运行边界已经确认，接下来可以配置厂商、密钥、路由和日志观测。"
           actions={
             <Link className="btn btn-primary" to="/dashboard" onClick={() => setInitialized(true)}>

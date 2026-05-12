@@ -1,4 +1,4 @@
-module localgateway
+module tokenbridge
 
 go 1.22.0
 

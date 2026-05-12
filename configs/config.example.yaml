@@ -32,7 +32,7 @@ logging:
   log_prompts: false
 
 database:
-  path: "./data/localgateway.db"
+  path: "./data/tokenbridge.db"
   wal_mode: true
   auto_vacuum: true
   backup_interval: "24h"

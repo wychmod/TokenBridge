@@ -3,13 +3,13 @@ package admin
 import (
 	"context"
 
-	"localgateway/internal/auth"
-	"localgateway/internal/pricing"
-	"localgateway/internal/provider"
-	"localgateway/internal/requestlog"
-	"localgateway/internal/routing"
-	"localgateway/internal/settings"
-	"localgateway/internal/usage"
+	"tokenbridge/internal/auth"
+	"tokenbridge/internal/pricing"
+	"tokenbridge/internal/provider"
+	"tokenbridge/internal/requestlog"
+	"tokenbridge/internal/routing"
+	"tokenbridge/internal/settings"
+	"tokenbridge/internal/usage"
 )
 
 type Overview struct {

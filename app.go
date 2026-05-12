@@ -14,8 +14,8 @@ import (
 
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 
-	"localgateway/internal/app"
-	"localgateway/internal/paths"
+	"tokenbridge/internal/app"
+	"tokenbridge/internal/paths"
 )
 
 const desktopVersion = "2.3.0"
@@ -128,7 +128,7 @@ func (d *DesktopApp) Shutdown(ctx context.Context) {
 func (d *DesktopApp) GetVersion() string { return desktopVersion }
 
 func (d *DesktopApp) GetDesktopStatus() DesktopStatus {
-	status := DesktopStatus{Version: desktopVersion, Platform: runtime.GOOS, WindowTitle: "灵枢", DesktopMode: true, Notifications: true, CustomChrome: true, TrayEnabled: true, HideToTrayEnabled: true, StateRestore: true, WindowState: d.State}
+	status := DesktopStatus{Version: desktopVersion, Platform: runtime.GOOS, WindowTitle: "TokenBridge", DesktopMode: true, Notifications: true, CustomChrome: true, TrayEnabled: true, HideToTrayEnabled: true, StateRestore: true, WindowState: d.State}
 	if d.Application != nil && d.Server != nil {
 		status.ServerAddr = d.Server.Addr
 		status.AdminURL = buildDesktopAdminURL(d.Application.Config.Server.Host, d.Application.Config.Server.Port, d.Application.Config.Server.AdminPath)
@@ -271,7 +271,7 @@ func (d *DesktopApp) SendNativeNotice(title string, message string) {
 		return
 	}
 	if title == "" {
-		title = "灵枢"
+		title = "TokenBridge"
 	}
 	if message == "" {
 		message = "桌面通知"
@@ -339,7 +339,7 @@ func checkAdminAssets() (bool, string) {
 }
 
 func checkPackagingResources() (bool, string) {
-	checks := []string{"build/package.ps1", "build/desktop.ps1", "build/assets/app-icon.ico", "cmd/localgateway/tray-icon.ico", "configs/config.example.yaml"}
+	checks := []string{"build/package.ps1", "build/desktop.ps1", "build/assets/app-icon.ico", "cmd/tokenbridge/tray-icon.ico", "configs/config.example.yaml"}
 	missing := []string{}
 	for _, item := range checks {
 		if _, err := os.Stat(item); err != nil {
@@ -380,9 +380,6 @@ func desktopStatePath() string {
 func loadDesktopWindowState() DesktopWindowState {
 	state := defaultDesktopWindowState()
 	statePath := desktopStatePath()
-	if !fileExists(statePath) {
-		migrateLegacyDesktopState(statePath)
-	}
 	data, err := os.ReadFile(statePath)
 	if err != nil {
 		return state
@@ -398,22 +395,6 @@ func loadDesktopWindowState() DesktopWindowState {
 		state.Height = 860
 	}
 	return state
-}
-func migrateLegacyDesktopState(targetPath string) {
-	baseDir, err := os.UserConfigDir()
-	if err != nil {
-		return
-	}
-	legacyPath := filepath.Join(baseDir, "Lingshu", "desktop-state.json")
-	if !fileExists(legacyPath) {
-		return
-	}
-	_ = os.MkdirAll(filepath.Dir(targetPath), 0o755)
-	data, err := os.ReadFile(legacyPath)
-	if err != nil {
-		return
-	}
-	_ = os.WriteFile(targetPath, data, 0o644)
 }
 func fileExists(path string) bool {
 	info, err := os.Stat(path)

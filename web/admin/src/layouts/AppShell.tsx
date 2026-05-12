@@ -97,7 +97,7 @@ const fallbackDesktopStatus: DesktopStatus = {
   platform: "web",
   serverAddr: "",
   adminUrl: "",
-  windowTitle: "灵枢",
+  windowTitle: "TokenBridge",
   desktopMode: false,
   notifications: false,
   customChrome: false,
@@ -248,7 +248,7 @@ export function AppShell({ children }: PropsWithChildren) {
       <aside className="sidebar">
         <div className="sidebar-brand">
           <Activity size={18} strokeWidth={2.5} />
-          <span>灵枢</span>
+          <span>TokenBridge</span>
         </div>
 
         <nav className="sidebar-nav">
@@ -299,7 +299,7 @@ export function AppShell({ children }: PropsWithChildren) {
         {/* Topbar */}
         <header className="topbar">
           <div className="topbar-leading">
-            <h1 className="page-title" style={{ fontSize: "1.15rem" }}>{currentPage?.label ?? "灵枢控制台"}</h1>
+            <h1 className="page-title" style={{ fontSize: "1.15rem" }}>{currentPage?.label ?? "TokenBridge 控制台"}</h1>
           </div>
           <div className="topbar-actions">
             <button

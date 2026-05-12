@@ -8,7 +8,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"localgateway/internal/models"
+	"tokenbridge/internal/models"
 )
 
 type Service struct {

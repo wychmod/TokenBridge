@@ -15,7 +15,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	"localgateway/internal/models"
+	"tokenbridge/internal/models"
 )
 
 const (
@@ -257,7 +257,7 @@ func (s *Service) fetchRemote(ctx context.Context) (map[string]litellmModelEntry
 		return nil, fmt.Errorf("build request: %w", err)
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "LocalGateway/1.0")
+	req.Header.Set("User-Agent", "TokenBridge/1.0")
 
 	resp, err := client.Do(req)
 	if err != nil {

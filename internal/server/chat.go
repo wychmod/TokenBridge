@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"localgateway/internal/models"
-	"localgateway/internal/provider"
-	"localgateway/internal/routing"
+	"tokenbridge/internal/models"
+	"tokenbridge/internal/provider"
+	"tokenbridge/internal/routing"
 )
 
 // chatCompletionMeta extracts only the fields needed for gateway routing logic.

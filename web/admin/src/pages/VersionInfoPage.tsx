@@ -35,7 +35,7 @@ export function VersionInfoPage() {
       <article className="panel">
         <SectionHeader
           eyebrow="版本概览"
-          title="灵枢版本与产品状态"
+          title="TokenBridge 版本与产品状态"
           description="展示当前运行形态、平台和发布基线，方便判断桌面端与网页端是否处在同一交付源。"
         />
         <div className="kpi-grid version-grid">

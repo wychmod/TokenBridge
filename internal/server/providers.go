@@ -5,7 +5,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"localgateway/internal/provider"
+	"tokenbridge/internal/provider"
 )
 
 type createProviderRequest struct {

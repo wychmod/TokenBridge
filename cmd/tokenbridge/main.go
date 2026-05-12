@@ -17,10 +17,10 @@ import (
 
 	"github.com/getlantern/systray"
 
-	"localgateway/internal/app"
+	"tokenbridge/internal/app"
 )
 
-const trayTooltip = "LocalGateway 本地 AI 网关"
+const trayTooltip = "TokenBridge 本地 AI 网关"
 
 func main() {
 	application, err := app.New()
@@ -70,7 +70,7 @@ func main() {
 		}
 	}()
 
-	application.Logger.Info().Str("addr", server.Addr).Msg("localgateway started")
+	application.Logger.Info().Str("addr", server.Addr).Msg("tokenbridge started")
 
 	if application.Config.Server.AutoOpenAdmin {
 		go func() {
@@ -107,7 +107,7 @@ func shouldRunInTray() bool {
 }
 
 func hasConsoleOverride() bool {
-	value := strings.ToLower(strings.TrimSpace(os.Getenv("LG_CONSOLE_MODE")))
+	value := strings.ToLower(strings.TrimSpace(os.Getenv("TB_CONSOLE_MODE")))
 	return value == "1" || value == "true" || value == "console"
 }
 
@@ -118,7 +118,7 @@ func isGoRunProcess() bool {
 	}
 
 	exeName := strings.ToLower(filepath.Base(exePath))
-	if strings.HasPrefix(exeName, "localgateway") {
+	if strings.HasPrefix(exeName, "tokenbridge") {
 		return false
 	}
 
@@ -128,20 +128,19 @@ func isGoRunProcess() bool {
 func runTray(adminURL string, requestShutdown func()) {
 	trayExited := make(chan struct{})
 
-		go func() {
-			systray.Run(func() {
-				systray.SetTitle("LocalGateway")
-				systray.SetTooltip(trayTooltip)
-				if len(trayIcon) > 0 {
-					systray.SetIcon(trayIcon)
-				}
+	go func() {
+		systray.Run(func() {
+			systray.SetTitle("TokenBridge")
+			systray.SetTooltip(trayTooltip)
+			if len(trayIcon) > 0 {
+				systray.SetIcon(trayIcon)
+			}
 
-				openItem := systray.AddMenuItem("打开管理后台", "在浏览器中打开管理后台")
-				statusItem := systray.AddMenuItem("服务状态：运行中", "当前服务状态")
-				statusItem.Disable()
-				systray.AddSeparator()
-				exitItem := systray.AddMenuItem("退出程序", "关闭 LocalGateway")
-
+			openItem := systray.AddMenuItem("打开管理后台", "在浏览器中打开管理后台")
+			statusItem := systray.AddMenuItem("服务状态：运行中", "当前服务状态")
+			statusItem.Disable()
+			systray.AddSeparator()
+			exitItem := systray.AddMenuItem("退出程序", "关闭 TokenBridge")
 
 			go func() {
 				for {

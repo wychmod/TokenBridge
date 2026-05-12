@@ -33,13 +33,13 @@ jobs:
           npm run build:wails
 
       - name: Build Windows App
-        run: wails build -s -skipbindings -platform windows/amd64 -o LocalGateway.exe
+        run: wails build -s -skipbindings -platform windows/amd64 -o TokenBridge.exe
 
       - name: Upload Windows Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: LocalGateway-Windows
-          path: build/bin/LocalGateway.exe
+          name: TokenBridge-Windows
+          path: build/bin/TokenBridge.exe
 
   build-macos:
     runs-on: macos-latest
@@ -67,10 +67,10 @@ jobs:
           npm run build:wails
 
       - name: Build macOS App
-        run: wails build -s -skipbindings -platform darwin/universal -o LocalGateway
+        run: wails build -s -skipbindings -platform darwin/universal -o TokenBridge
 
       - name: Upload macOS Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: LocalGateway-macOS
-          path: build/bin/LocalGateway.app
+          name: TokenBridge-macOS
+          path: build/bin/TokenBridge.app

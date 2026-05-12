@@ -9,10 +9,9 @@ import (
 	"strings"
 	"time"
 
-
 	"gorm.io/gorm"
 
-	"localgateway/internal/models"
+	"tokenbridge/internal/models"
 )
 
 type Service struct {
@@ -20,21 +19,21 @@ type Service struct {
 }
 
 type Item struct {
-	ID            string                 `json:"id"`
-	LocalKeyID    string                 `json:"local_key_id"`
-	ProviderID    string                 `json:"provider_id"`
-	Path          string                 `json:"path"`
-	Method        string                 `json:"method"`
-	StatusCode    int                    `json:"status_code"`
-	LatencyMS     int64                  `json:"latency_ms"`
-	ErrorMessage  string                 `json:"error_message"`
-	Metadata      map[string]any         `json:"metadata"`
-	CreatedAt     time.Time              `json:"created_at"`
-	StatusLabel   string                 `json:"status_label"`
-	Detail        string                 `json:"detail"`
-	TraceID       string                 `json:"trace_id"`
-	FallbackUsed  bool                   `json:"fallback_used"`
-	FallbackTried []string               `json:"fallback_tried"`
+	ID            string         `json:"id"`
+	LocalKeyID    string         `json:"local_key_id"`
+	ProviderID    string         `json:"provider_id"`
+	Path          string         `json:"path"`
+	Method        string         `json:"method"`
+	StatusCode    int            `json:"status_code"`
+	LatencyMS     int64          `json:"latency_ms"`
+	ErrorMessage  string         `json:"error_message"`
+	Metadata      map[string]any `json:"metadata"`
+	CreatedAt     time.Time      `json:"created_at"`
+	StatusLabel   string         `json:"status_label"`
+	Detail        string         `json:"detail"`
+	TraceID       string         `json:"trace_id"`
+	FallbackUsed  bool           `json:"fallback_used"`
+	FallbackTried []string       `json:"fallback_tried"`
 }
 
 type Query struct {
@@ -254,4 +253,3 @@ func intToString(v int) string {
 func int64ToString(v int64) string {
 	return strconv.FormatInt(v, 10)
 }
-

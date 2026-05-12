@@ -8,8 +8,8 @@ import (
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 
-	"localgateway/internal/config"
-	"localgateway/internal/models"
+	"tokenbridge/internal/config"
+	"tokenbridge/internal/models"
 )
 
 func OpenDatabase(cfg config.DatabaseConfig) (*gorm.DB, error) {

@@ -97,7 +97,7 @@ const emptyStatus: DesktopStatus = {
   platform: "web",
   serverAddr: "",
   adminUrl: "",
-  windowTitle: "灵枢",
+  windowTitle: "TokenBridge",
   desktopMode: false,
   notifications: false,
   customChrome: false,

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"localgateway/internal/provider"
+	"tokenbridge/internal/provider"
 )
 
 func (r *Router) handleChatCompletionsStream(w http.ResponseWriter, req *http.Request, requestBytes []byte, meta chatCompletionMeta) {

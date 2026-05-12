@@ -11,7 +11,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"localgateway/internal/models"
+	"tokenbridge/internal/models"
 )
 
 type Service struct {
@@ -19,23 +19,23 @@ type Service struct {
 }
 
 type CreateKeyInput struct {
-	Name             string      `json:"name"`
-	AllowedModels    []string    `json:"allowed_models"`
-	AllowedProviders []string    `json:"allowed_providers"`
-	MonthlyBudget    float64     `json:"monthly_budget"`
-	TokenBudget      int64       `json:"token_budget"`
-	Enabled          bool        `json:"enabled"`
-	ExpiresAt        *time.Time  `json:"expires_at"`
+	Name             string     `json:"name"`
+	AllowedModels    []string   `json:"allowed_models"`
+	AllowedProviders []string   `json:"allowed_providers"`
+	MonthlyBudget    float64    `json:"monthly_budget"`
+	TokenBudget      int64      `json:"token_budget"`
+	Enabled          bool       `json:"enabled"`
+	ExpiresAt        *time.Time `json:"expires_at"`
 }
 
 type UpdateKeyInput struct {
-	Name             string      `json:"name"`
-	AllowedModels    []string    `json:"allowed_models"`
-	AllowedProviders []string    `json:"allowed_providers"`
-	MonthlyBudget    float64     `json:"monthly_budget"`
-	TokenBudget      int64       `json:"token_budget"`
-	Enabled          bool        `json:"enabled"`
-	ExpiresAt        *time.Time  `json:"expires_at"`
+	Name             string     `json:"name"`
+	AllowedModels    []string   `json:"allowed_models"`
+	AllowedProviders []string   `json:"allowed_providers"`
+	MonthlyBudget    float64    `json:"monthly_budget"`
+	TokenBudget      int64      `json:"token_budget"`
+	Enabled          bool       `json:"enabled"`
+	ExpiresAt        *time.Time `json:"expires_at"`
 }
 
 func NewService(db *gorm.DB) *Service {
@@ -68,7 +68,7 @@ func (s *Service) List(ctx context.Context) ([]models.LocalKey, error) {
 		return nil, err
 	}
 	for i := range keys {
-		keys[i].DisplayKey = "lg-****"
+		keys[i].DisplayKey = "tb-****"
 	}
 	return keys, nil
 }
@@ -78,7 +78,7 @@ func (s *Service) Get(ctx context.Context, id string) (*models.LocalKey, error) 
 	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&entity).Error; err != nil {
 		return nil, err
 	}
-	entity.DisplayKey = "lg-****"
+	entity.DisplayKey = "tb-****"
 	return &entity, nil
 }
 
@@ -97,7 +97,7 @@ func (s *Service) Update(ctx context.Context, id string, input UpdateKeyInput) (
 	if err := s.db.WithContext(ctx).Save(entity).Error; err != nil {
 		return models.LocalKey{}, err
 	}
-	entity.DisplayKey = "lg-****"
+	entity.DisplayKey = "tb-****"
 	return *entity, nil
 }
 
@@ -121,7 +121,7 @@ func (s *Service) Extend(ctx context.Context, id string, expiresAt *time.Time) (
 	if err := s.db.WithContext(ctx).Save(entity).Error; err != nil {
 		return models.LocalKey{}, err
 	}
-	entity.DisplayKey = "lg-****"
+	entity.DisplayKey = "tb-****"
 	return *entity, nil
 }
 
@@ -182,7 +182,7 @@ func (s *Service) DeductUsage(ctx context.Context, keyID string, costUSD float64
 
 func generateLocalKey() string {
 	seed := strings.ReplaceAll(uuid.NewString(), "-", "")
-	return "lg-" + seed[:16] + "_" + strings.ToLower(seed[16:20])
+	return "tb-" + seed[:16] + "_" + strings.ToLower(seed[16:20])
 }
 
 func hashKey(value string) string {
@@ -192,7 +192,7 @@ func hashKey(value string) string {
 
 func maskKey(value string) string {
 	if len(value) < 12 {
-		return "lg-****"
+		return "tb-****"
 	}
 	return value[:7] + "****" + value[len(value)-4:]
 }

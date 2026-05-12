@@ -7,7 +7,7 @@ import "golang.org/x/sys/windows"
 
 type instanceHandle = windows.Handle
 
-const instanceMutexName = "LocalGateway_SingleInstance_v1"
+const instanceMutexName = "TokenBridge_SingleInstance_v1"
 
 // acquireInstanceLock 尝试创建全局命名 Mutex。
 // 返回 (handle, true) 表示成功获取锁；返回 (0, false) 表示已有实例在运行。

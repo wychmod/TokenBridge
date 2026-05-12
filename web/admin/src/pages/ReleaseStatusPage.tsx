@@ -12,7 +12,7 @@ const releaseChecklist = [
 
 export function ReleaseStatusPage() {
   const { distributionPlan, settings, pushNotice } = useAdminStore();
-  const packageName = distributionPlan?.package_name ?? "Lingshu-Portable.zip";
+  const packageName = distributionPlan?.package_name ?? "TokenBridge-Portable.zip";
   const releaseMode = distributionPlan?.mode ?? settings.bundleMode ?? "single-binary";
 
   return (

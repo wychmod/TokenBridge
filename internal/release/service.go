@@ -19,11 +19,11 @@ func NewService() *Service {
 func (s *Service) Status(ctx context.Context) PortableStatus {
 	_ = ctx
 	return PortableStatus{
-		ArtifactName: "lingshu.zip",
+		ArtifactName: "tokenbridge.zip",
 		Version:      "0.1.0-alpha",
 		Ready:        false,
 		IncludedFiles: []string{
-			"lingshu.exe",
+			"tokenbridge.exe",
 			"config.yaml",
 			"data/",
 			"logs/",

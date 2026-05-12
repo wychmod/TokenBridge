@@ -1,7 +1,7 @@
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFilter
 
-ROOT = Path(r"d:/idea/localgateway")
+ROOT = Path(__file__).resolve().parents[1]
 ASSETS = ROOT / "build" / "assets"
 WEB_PUBLIC = ROOT / "web" / "admin" / "public"
 ASSETS.mkdir(parents=True, exist_ok=True)
