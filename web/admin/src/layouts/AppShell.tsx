@@ -109,6 +109,8 @@ const fallbackDesktopStatus: DesktopStatus = {
   configSummary: { host: "127.0.0.1", port: 0, adminPath: "/admin", theme: "system", bundleMode: "browser", updateChannel: "stable" }
 };
 
+const NOTICE_AUTO_DISMISS_MS = 20_000;
+
 export function AppShell({ children }: PropsWithChildren) {
   const { theme, setTheme } = useUIStore();
   const { notices, dismissNotice, providers, pushNotice, hydrate } = useAdminStore();
@@ -136,6 +138,16 @@ export function AppShell({ children }: PropsWithChildren) {
   useEffect(() => {
     void hydrate();
   }, [hydrate]);
+
+  useEffect(() => {
+    if (notices.length === 0) return;
+    const timers = notices.map((notice) => {
+      const elapsed = Date.now() - notice.createdAt;
+      const delay = Math.max(0, NOTICE_AUTO_DISMISS_MS - elapsed);
+      return window.setTimeout(() => dismissNotice(notice.id), delay);
+    });
+    return () => timers.forEach((timer) => window.clearTimeout(timer));
+  }, [notices, dismissNotice]);
 
   useEffect(() => {
     void fetchDesktopStatus().then((status) => {
@@ -343,7 +355,7 @@ export function AppShell({ children }: PropsWithChildren) {
                   <strong>{notice.title}</strong>
                   <p>{notice.message}</p>
                 </div>
-                <button type="button" className="btn btn-ghost btn-icon" onClick={() => dismissNotice(notice.id)}>
+                <button type="button" className="btn btn-ghost btn-icon" onClick={() => dismissNotice(notice.id)} aria-label="关闭通知">
                   <X size={14} />
                 </button>
               </article>

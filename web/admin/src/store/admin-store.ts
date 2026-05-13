@@ -27,6 +27,7 @@ type NoticeTone = "success" | "warning" | "info";
 
 type Notice = {
   id: number;
+  createdAt: number;
   title: string;
   message: string;
   tone: NoticeTone;
@@ -66,7 +67,7 @@ type AdminState = {
   testRouting: (input: { model: string; localKey: string; format: string; streaming?: boolean }) => Promise<RoutingSimulation | null>;
   saveSettings: (record: SettingsRecord) => Promise<void>;
   backupSettings: () => Promise<void>;
-  pushNotice: (notice: Omit<Notice, "id">) => void;
+  pushNotice: (notice: Omit<Notice, "id" | "createdAt">) => void;
   dismissNotice: (id: number) => void;
 };
 
@@ -82,6 +83,7 @@ export const useAdminStore = create<AdminState>((set, get) => ({
   notices: [
     {
       id: 1,
+      createdAt: Date.now(),
       tone: "info",
       title: "欢迎使用 TokenBridge 控制台",
       message: "当前界面已接入本地后端，配置变更会写入本地数据库。"
@@ -332,8 +334,16 @@ function upsertByAlias(items: ModelAliasRecord[], next: ModelAliasRecord): Model
   return items.map((item) => (item.alias === next.alias ? next : item));
 }
 
-function prependNotice(notices: Notice[], notice: Omit<Notice, "id">): Notice[] {
-  return [{ id: Date.now(), ...notice }, ...notices].slice(0, 4);
+function prependNotice(notices: Notice[], notice: Omit<Notice, "id" | "createdAt">): Notice[] {
+  const createdAt = Date.now();
+  return [{ id: nextNoticeId(createdAt), createdAt, ...notice }, ...notices].slice(0, 4);
+}
+
+let noticeSequence = 1;
+
+function nextNoticeId(createdAt: number): number {
+  noticeSequence = (noticeSequence + 1) % 1000;
+  return createdAt * 1000 + noticeSequence;
 }
 
 type ProviderApiRecord = {

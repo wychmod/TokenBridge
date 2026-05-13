@@ -1,5 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
-import { DollarSign, RefreshCw, Search, TrendingUp, Database, CheckCircle, AlertCircle, Loader2, Eye } from "lucide-react";
+import {
+  AlertCircle,
+  CheckCircle,
+  Database,
+  DollarSign,
+  Eye,
+  Loader2,
+  RefreshCw,
+  Search,
+  TrendingUp
+} from "lucide-react";
 import { useAdminStore } from "../store/admin-store";
 
 type ModelPricing = {
@@ -30,12 +40,29 @@ type LookupResult = {
   fallback_model: string;
 };
 
+const modeOptions = [
+  { value: "all", label: "全部", shortLabel: "全部" },
+  { value: "chat", label: "对话模型", shortLabel: "对话" },
+  { value: "embedding", label: "向量模型", shortLabel: "向量" },
+  { value: "image_generation", label: "图像生成", shortLabel: "图像" },
+  { value: "audio_transcription", label: "语音转录", shortLabel: "语音" }
+] as const;
+
+type ModeFilter = (typeof modeOptions)[number]["value"];
+
+const modeLabelMap: Record<string, string> = {
+  chat: "对话",
+  embedding: "向量",
+  image_generation: "图像",
+  audio_transcription: "语音"
+};
+
 export function PricingPage() {
   const { pushNotice } = useAdminStore();
   const [models, setModels] = useState<ModelPricing[]>([]);
   const [status, setStatus] = useState<PricingStatus | null>(null);
   const [search, setSearch] = useState("");
-  const [modeFilter, setModeFilter] = useState<"all" | "chat" | "embedding" | "image_generation" | "audio_transcription">("all");
+  const [modeFilter, setModeFilter] = useState<ModeFilter>("all");
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [lookupModel, setLookupModel] = useState("");
@@ -43,7 +70,6 @@ export function PricingPage() {
   const [lookupLoading, setLookupLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<"browse" | "lookup" | "estimate">("browse");
 
-  // Estimate state
   const [estModel, setEstModel] = useState("");
   const [estInput, setEstInput] = useState(1000);
   const [estOutput, setEstOutput] = useState(500);
@@ -64,7 +90,7 @@ export function PricingPage() {
       const data = await res.json();
       setStatus(data);
     } catch {
-      // silent
+      // The model list remains usable when the status endpoint is unavailable.
     }
   };
 
@@ -127,7 +153,7 @@ export function PricingPage() {
       const params = new URLSearchParams({
         model: estModel.trim(),
         input_tokens: String(estInput),
-        output_tokens: String(estOutput),
+        output_tokens: String(estOutput)
       });
       const res = await fetch(`/admin/api/pricing/estimate?${params}`);
       const data = await res.json();
@@ -143,12 +169,20 @@ export function PricingPage() {
     return models.filter(
       (m) =>
         m.model_id.toLowerCase().includes(q) ||
-        m.litellm_provider.toLowerCase().includes(q)
+        m.litellm_provider.toLowerCase().includes(q) ||
+        (m.mode ?? "").toLowerCase().includes(q)
     );
   }, [models, search]);
 
+  const visibleModels = filteredModels.slice(0, 200);
+  const providerCount = useMemo(() => new Set(models.map((model) => model.litellm_provider).filter(Boolean)).size, [models]);
+  const visionCount = filteredModels.filter((model) => model.supports_vision).length;
+  const functionCount = filteredModels.filter((model) => model.supports_function_calling).length;
+  const cacheCount = filteredModels.filter((model) => hasCachePricing(model)).length;
+  const activeModeLabel = modeOptions.find((option) => option.value === modeFilter)?.label ?? "全部";
+
   const fmtCost = (val: number) => {
-    if (val === 0) return "—";
+    if (!val) return "—";
     const perM = val * 1_000_000;
     return perM >= 1 ? `$${perM.toFixed(2)}` : `$${perM.toFixed(4)}`;
   };
@@ -168,38 +202,70 @@ export function PricingPage() {
     }
   };
 
+  const statCards = [
+    {
+      label: "价格库",
+      value: (status?.total_models ?? models.length).toLocaleString(),
+      detail: status?.last_sync ? `同步 ${fmtDate(status.last_sync)}` : "本地缓存状态",
+      tone: "teal",
+      icon: Database
+    },
+    {
+      label: "当前列表",
+      value: filteredModels.length.toLocaleString(),
+      detail: activeModeLabel,
+      tone: "blue",
+      icon: TrendingUp
+    },
+    {
+      label: "能力覆盖",
+      value: `${visionCount}/${functionCount}`,
+      detail: "视觉 / 函数调用",
+      tone: "amber",
+      icon: CheckCircle
+    },
+    {
+      label: "缓存计价",
+      value: cacheCount.toLocaleString(),
+      detail: `${providerCount.toLocaleString()} 个 Provider`,
+      tone: "violet",
+      icon: DollarSign
+    }
+  ];
+
   return (
-    <div className="flex-col gap-4">
-      {/* Header */}
-      <div className="section-header">
-        <div className="section-header-main">
-          <span className="eyebrow">计费管理</span>
-          <h2 className="section-title">模型定价</h2>
+    <div className="pricing-page flex-col gap-4">
+      <section className="pricing-hero">
+        <div className="pricing-hero-copy">
+          <span className="eyebrow">Billing Catalog</span>
+          <h2>模型定价矩阵</h2>
+          <p>统一查看输入、输出、上下文与能力标签，便于快速对比模型成本和兜底计价状态。</p>
         </div>
-        <div className="section-actions" style={{ gap: 8 }}>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={handleRefresh} disabled={syncing}>
+        <div className="pricing-hero-actions">
+          <button type="button" className="btn btn-primary btn-sm" onClick={handleRefresh} disabled={syncing}>
             <RefreshCw size={14} className={syncing ? "spin" : ""} />
             {syncing ? "同步中..." : "刷新定价"}
           </button>
         </div>
-      </div>
+      </section>
 
-      {/* Status bar */}
-      {status && (
-        <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-          <div className="stat-pill">
-            <Database size={13} />
-            <span>{status.total_models.toLocaleString()} 模型</span>
-          </div>
-          <div className="stat-pill">
-            <TrendingUp size={13} />
-            <span>上次同步: {fmtDate(status.last_sync)}</span>
-          </div>
-        </div>
-      )}
+      <section className="pricing-summary-grid" aria-label="定价概览">
+        {statCards.map((card) => {
+          const Icon = card.icon;
+          return (
+            <article key={card.label} className={`pricing-stat-card ${card.tone}`}>
+              <span className="pricing-stat-icon"><Icon size={16} /></span>
+              <div>
+                <span>{card.label}</span>
+                <strong>{card.value}</strong>
+                <em>{card.detail}</em>
+              </div>
+            </article>
+          );
+        })}
+      </section>
 
-      {/* Tabs */}
-      <div className="tabs" style={{ alignSelf: "flex-start" }}>
+      <div className="pricing-tabs tabs" role="tablist" aria-label="定价工具">
         <button type="button" className={`tab ${activeTab === "browse" ? "active" : ""}`} onClick={() => setActiveTab("browse")}>
           定价浏览
         </button>
@@ -211,92 +277,133 @@ export function PricingPage() {
         </button>
       </div>
 
-      {/* Tab: Browse */}
       {activeTab === "browse" && (
-        <div className="panel flex-col gap-4">
-          {/* Filters */}
-          <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-            <div style={{ position: "relative", flex: 1, minWidth: 200 }}>
-              <Search size={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", opacity: 0.4 }} />
+        <section className="pricing-workbench">
+          <div className="pricing-toolbar">
+            <label className="pricing-search-field">
+              <Search size={15} />
               <input
                 className="form-control"
-                style={{ paddingLeft: 32 }}
-                placeholder="搜索模型名或 Provider..."
+                placeholder="搜索模型名、Provider 或类型..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
+            </label>
+
+            <div className="pricing-mode-filter" aria-label="模型类型筛选">
+              {modeOptions.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={modeFilter === option.value ? "active" : ""}
+                  onClick={() => setModeFilter(option.value)}
+                >
+                  {option.shortLabel}
+                </button>
+              ))}
             </div>
-            <select className="form-control" style={{ width: 160 }} value={modeFilter} onChange={(e) => setModeFilter(e.target.value as typeof modeFilter)}>
-              <option value="all">全部类型</option>
-              <option value="chat">对话</option>
-              <option value="embedding">向量</option>
-              <option value="image_generation">图像生成</option>
-              <option value="audio_transcription">语音转录</option>
-            </select>
           </div>
 
-          {/* Table */}
           {loading ? (
-            <div style={{ display: "flex", justifyContent: "center", padding: 40, opacity: 0.5 }}>
-              <Loader2 size={20} className="spin" />
+            <div className="pricing-loading">
+              <Loader2 size={22} className="spin" />
+              <span>正在读取价格库</span>
             </div>
           ) : (
-            <div style={{ overflowX: "auto" }}>
-              <table className="data-table">
+            <div className="pricing-table-shell">
+              <table className="pricing-table">
                 <thead>
                   <tr>
-                    <th>模型</th>
-                    <th>Provider</th>
-                    <th>类型</th>
-                    <th style={{ textAlign: "right" }}>输入 ($/M)</th>
-                    <th style={{ textAlign: "right" }}>输出 ($/M)</th>
-                    <th style={{ textAlign: "center" }}>视觉</th>
-                    <th style={{ textAlign: "center" }}>函数调用</th>
+                    <th scope="col">模型</th>
+                    <th scope="col">Provider</th>
+                    <th scope="col">类型</th>
+                    <th scope="col">上下文</th>
+                    <th scope="col" className="numeric">输入 /M</th>
+                    <th scope="col" className="numeric">输出 /M</th>
+                    <th scope="col">缓存</th>
+                    <th scope="col">能力</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredModels.length === 0 ? (
-                    <tr><td colSpan={7} style={{ textAlign: "center", padding: 24, opacity: 0.5 }}>暂无数据</td></tr>
+                  {visibleModels.length === 0 ? (
+                    <tr>
+                      <td colSpan={8}>
+                        <div className="pricing-empty">暂无匹配的定价数据</div>
+                      </td>
+                    </tr>
                   ) : (
-                    filteredModels.slice(0, 200).map((m) => (
-                      <tr key={m.model_id}>
-                        <td>
-                          <code style={{ fontSize: 12, fontWeight: 500 }}>{m.model_id}</code>
-                        </td>
-                        <td style={{ fontSize: 12, opacity: 0.7 }}>{m.litellm_provider || "—"}</td>
-                        <td>
-                          <span className="badge">{m.mode || "—"}</span>
-                        </td>
-                        <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtCost(m.input_cost_per_token)}</td>
-                        <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtCost(m.output_cost_per_token)}</td>
-                        <td style={{ textAlign: "center" }}>{m.supports_vision ? <CheckCircle size={14} style={{ color: "var(--c-green-600)" }} /> : <span style={{ opacity: 0.2 }}>—</span>}</td>
-                        <td style={{ textAlign: "center" }}>{m.supports_function_calling ? <CheckCircle size={14} style={{ color: "var(--c-green-600)" }} /> : <span style={{ opacity: 0.2 }}>—</span>}</td>
-                      </tr>
-                    ))
+                    visibleModels.map((model) => {
+                      const modeClass = getModeClass(model.mode);
+                      return (
+                        <tr key={model.model_id}>
+                          <td className="pricing-model-column">
+                            <div className="pricing-model-cell">
+                              <span className={`pricing-mode-dot ${modeClass}`} />
+                              <div>
+                                <code>{model.model_id}</code>
+                                <span>更新 {fmtDate(model.fetched_at)}</span>
+                              </div>
+                            </div>
+                          </td>
+                          <td>
+                            <span className="pricing-provider">{model.litellm_provider || "未标注"}</span>
+                          </td>
+                          <td>
+                            <span className={`pricing-badge ${modeClass}`}>{modeLabel(model.mode)}</span>
+                          </td>
+                          <td className="pricing-context-cell">
+                            <strong>{formatTokens(model.max_input_tokens)}</strong>
+                            <span>{formatTokens(model.max_output_tokens)} 输出</span>
+                          </td>
+                          <td className="numeric price-cell">{fmtCost(model.input_cost_per_token)}</td>
+                          <td className="numeric price-cell output">{fmtCost(model.output_cost_per_token)}</td>
+                          <td className="pricing-cache-cell">
+                            {hasCachePricing(model) ? (
+                              <>
+                                <span>创建 {fmtCost(model.cache_creation_cost_per_token)}</span>
+                                <span>读取 {fmtCost(model.cache_read_cost_per_token)}</span>
+                              </>
+                            ) : (
+                              <span className="pricing-muted">未标注</span>
+                            )}
+                          </td>
+                          <td>
+                            <div className="pricing-capability-list">
+                              {model.supports_vision && <span className="pricing-capability positive"><Eye size={12} />视觉</span>}
+                              {model.supports_function_calling && <span className="pricing-capability info"><CheckCircle size={12} />函数</span>}
+                              {model.supports_prompt_caching && <span className="pricing-capability amber"><Database size={12} />缓存</span>}
+                              {!model.supports_vision && !model.supports_function_calling && !model.supports_prompt_caching && (
+                                <span className="pricing-muted">基础</span>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
+
               {filteredModels.length > 200 && (
-                <div style={{ textAlign: "center", padding: 12, fontSize: 12, opacity: 0.5 }}>
-                  显示前 200 条，共 {filteredModels.length} 条
+                <div className="pricing-table-note">
+                  已展示前 200 条，共 {filteredModels.length.toLocaleString()} 条。可继续搜索缩小范围。
                 </div>
               )}
             </div>
           )}
-        </div>
+        </section>
       )}
 
-      {/* Tab: Lookup */}
       {activeTab === "lookup" && (
-        <div className="panel flex-col gap-4">
-          <div className="section-header" style={{ marginBottom: 0 }}>
+        <section className="pricing-tool-panel">
+          <div className="section-header">
             <div className="section-header-main">
-              <span className="eyebrow">精确查询</span>
+              <span className="eyebrow">Precise Lookup</span>
               <h3 className="section-title">模型查询</h3>
             </div>
           </div>
 
-          <div style={{ display: "flex", gap: 8 }}>
+          <div className="pricing-action-row">
             <input
               className="form-control"
               placeholder="输入模型 ID，如 gpt-4o、claude-3-5-sonnet..."
@@ -311,67 +418,32 @@ export function PricingPage() {
           </div>
 
           {lookupResult && (
-            <div className="panel" style={{ background: "var(--color-background-secondary)" }}>
-              {lookupResult.data ? (
-                <div className="flex-col gap-3">
-                  {lookupResult.fallback_used && (
-                    <div className="alert alert-warning" style={{ marginBottom: 8 }}>
-                      <AlertCircle size={14} />
-                      <span>未找到精确匹配，已使用 <code>{lookupResult.fallback_model}</code> 价格兜底</span>
-                    </div>
-                  )}
-                  {lookupResult.matched && (
-                    <div className="alert alert-success" style={{ marginBottom: 8 }}>
-                      <CheckCircle size={14} />
-                      <span>精确匹配成功</span>
-                    </div>
-                  )}
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 12 }}>
-                    <div className="stat-pill"><span>模型</span><strong>{lookupResult.data.model_id}</strong></div>
-                    <div className="stat-pill"><span>Provider</span><strong>{lookupResult.data.litellm_provider}</strong></div>
-                    <div className="stat-pill"><span>类型</span><strong>{lookupResult.data.mode}</strong></div>
-                    <div className="stat-pill"><span>输入价格</span><strong>{fmtCost(lookupResult.data.input_cost_per_token)} /M</strong></div>
-                    <div className="stat-pill"><span>输出价格</span><strong>{fmtCost(lookupResult.data.output_cost_per_token)} /M</strong></div>
-                    {lookupResult.data.max_input_tokens > 0 && (
-                      <div className="stat-pill"><span>最大输入</span><strong>{(lookupResult.data.max_input_tokens / 1000).toFixed(0)}K</strong></div>
-                    )}
-                    {lookupResult.data.max_output_tokens > 0 && (
-                      <div className="stat-pill"><span>最大输出</span><strong>{(lookupResult.data.max_output_tokens / 1000).toFixed(0)}K</strong></div>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <div style={{ textAlign: "center", padding: 24, opacity: 0.5 }}>
-                  未找到定价信息
-                </div>
-              )}
-            </div>
+            <PricingLookupResult result={lookupResult} fmtCost={fmtCost} />
           )}
-        </div>
+        </section>
       )}
 
-      {/* Tab: Estimate */}
       {activeTab === "estimate" && (
-        <div className="panel flex-col gap-4">
-          <div className="section-header" style={{ marginBottom: 0 }}>
+        <section className="pricing-tool-panel">
+          <div className="section-header">
             <div className="section-header-main">
-              <span className="eyebrow">费用预估</span>
+              <span className="eyebrow">Cost Estimate</span>
               <h3 className="section-title">请求费用估算</h3>
             </div>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr auto", gap: 12, alignItems: "end" }}>
+          <div className="pricing-estimate-form">
             <div className="form-field">
               <label className="form-label">模型</label>
               <input className="form-control" placeholder="gpt-4o" value={estModel} onChange={(e) => setEstModel(e.target.value)} />
             </div>
             <div className="form-field">
               <label className="form-label">输入 Tokens</label>
-              <input className="form-control" type="number" value={estInput} onChange={(e) => setEstInput(Number(e.target.value))} />
+              <input className="form-control" type="number" min={0} value={estInput} onChange={(e) => setEstInput(Number(e.target.value))} />
             </div>
             <div className="form-field">
               <label className="form-label">输出 Tokens</label>
-              <input className="form-control" type="number" value={estOutput} onChange={(e) => setEstOutput(Number(e.target.value))} />
+              <input className="form-control" type="number" min={0} value={estOutput} onChange={(e) => setEstOutput(Number(e.target.value))} />
             </div>
             <button type="button" className="btn btn-primary btn-sm" onClick={handleEstimate}>
               <DollarSign size={14} /> 估算
@@ -379,28 +451,87 @@ export function PricingPage() {
           </div>
 
           {estResult && (
-            <div className="panel" style={{ background: "var(--color-background-secondary)" }}>
-              <div className="flex-col gap-3">
-                {estResult.fallback_used && (
-                  <div className="alert alert-warning">
-                    <AlertCircle size={14} />
-                    <span>未匹配到 <code>{estResult.model_id}</code>，使用 <code>{estResult.fallback_model}</code> 兜底</span>
-                  </div>
-                )}
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 12 }}>
-                  <div className="stat-pill">
-                    <span>预估费用</span>
-                    <strong style={{ fontSize: 18, color: "var(--c-coral-600)" }}>{fmtUSD(estResult.estimated_usd)}</strong>
-                  </div>
-                  <div className="stat-pill"><span>输入 Tokens</span><strong>{estResult.input_tokens.toLocaleString()}</strong></div>
-                  <div className="stat-pill"><span>输出 Tokens</span><strong>{estResult.output_tokens.toLocaleString()}</strong></div>
-                  <div className="stat-pill"><span>匹配状态</span><strong>{estResult.matched ? "精确匹配" : "兜底"}</strong></div>
+            <div className="pricing-result-card estimate">
+              {estResult.fallback_used && (
+                <div className="pricing-alert warning">
+                  <AlertCircle size={14} />
+                  <span>未匹配到 <code>{estResult.model_id}</code>，使用 <code>{estResult.fallback_model}</code> 兜底</span>
                 </div>
+              )}
+              <div className="pricing-result-grid">
+                <MetricTile label="预估费用" value={fmtUSD(estResult.estimated_usd)} tone="strong" />
+                <MetricTile label="输入 Tokens" value={estResult.input_tokens.toLocaleString()} />
+                <MetricTile label="输出 Tokens" value={estResult.output_tokens.toLocaleString()} />
+                <MetricTile label="匹配状态" value={estResult.matched ? "精确匹配" : "兜底"} />
               </div>
             </div>
           )}
-        </div>
+        </section>
       )}
     </div>
   );
+}
+
+function PricingLookupResult({ result, fmtCost }: { result: LookupResult; fmtCost: (value: number) => string }) {
+  if (!result.data) {
+    return (
+      <div className="pricing-result-card">
+        <div className="pricing-empty">未找到定价信息</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="pricing-result-card">
+      {result.fallback_used && (
+        <div className="pricing-alert warning">
+          <AlertCircle size={14} />
+          <span>未找到精确匹配，已使用 <code>{result.fallback_model}</code> 价格兜底</span>
+        </div>
+      )}
+      {result.matched && (
+        <div className="pricing-alert success">
+          <CheckCircle size={14} />
+          <span>精确匹配成功</span>
+        </div>
+      )}
+      <div className="pricing-result-grid">
+        <MetricTile label="模型" value={result.data.model_id} mono />
+        <MetricTile label="Provider" value={result.data.litellm_provider || "未标注"} />
+        <MetricTile label="类型" value={modeLabel(result.data.mode)} />
+        <MetricTile label="输入价格" value={`${fmtCost(result.data.input_cost_per_token)} /M`} />
+        <MetricTile label="输出价格" value={`${fmtCost(result.data.output_cost_per_token)} /M`} />
+        {result.data.max_input_tokens > 0 && <MetricTile label="最大输入" value={formatTokens(result.data.max_input_tokens)} />}
+        {result.data.max_output_tokens > 0 && <MetricTile label="最大输出" value={formatTokens(result.data.max_output_tokens)} />}
+      </div>
+    </div>
+  );
+}
+
+function MetricTile({ label, value, mono, tone }: { label: string; value: string; mono?: boolean; tone?: "strong" }) {
+  return (
+    <div className={`pricing-metric-tile ${tone ?? ""}`}>
+      <span>{label}</span>
+      <strong className={mono ? "mono" : ""}>{value}</strong>
+    </div>
+  );
+}
+
+function modeLabel(mode: string) {
+  return modeLabelMap[mode] ?? (mode || "未标注");
+}
+
+function getModeClass(mode: string) {
+  return (mode || "unknown").replace(/_/g, "-").replace(/[^a-z0-9-]/gi, "").toLowerCase() || "unknown";
+}
+
+function formatTokens(value: number) {
+  if (!value) return "—";
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(value % 1_000_000 === 0 ? 0 : 1)}M`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(value % 1_000 === 0 ? 0 : 1)}K`;
+  return value.toLocaleString();
+}
+
+function hasCachePricing(model: ModelPricing) {
+  return model.supports_prompt_caching || model.cache_creation_cost_per_token > 0 || model.cache_read_cost_per_token > 0;
 }
