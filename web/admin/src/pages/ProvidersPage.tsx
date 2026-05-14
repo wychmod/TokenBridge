@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, Eye, EyeOff, Plus, RefreshCcw, Trash2, Wifi, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Eye, EyeOff, Loader2, Plus, RefreshCcw, Trash2, Wifi, X } from "lucide-react";
+import clsx from "clsx";
 import { useAdminStore } from "../store/admin-store";
 import { providerStatusMap } from "../store/labels";
+import type { ProviderRecord } from "../store/entities";
 
 const providerTypeOptions = [
   { value: "openai", label: "OpenAI", hint: "官方 Chat Completions", defaultBaseURL: "https://api.openai.com", modelPlaceholder: "gpt-4o, gpt-4o-mini, o3-mini" },
@@ -9,7 +11,7 @@ const providerTypeOptions = [
   { value: "anthropic", label: "Anthropic (Claude)", hint: "官方 Messages API", defaultBaseURL: "https://api.anthropic.com", modelPlaceholder: "claude-sonnet-4, claude-haiku-4" }
 ] as const;
 
-const emptyProvider = (count: number) => ({
+const emptyProvider = (count: number): ProviderRecord => ({
   id: `prov-${Date.now()}`,
   name: "新厂商",
   type: "openai-compatible",
@@ -36,8 +38,9 @@ export function ProvidersPage() {
   } = useAdminStore();
 
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [form, setForm] = useState<ReturnType<typeof emptyProvider>>(emptyProvider(providers.length));
+  const [form, setForm] = useState<ProviderRecord>(emptyProvider(providers.length));
   const [showApiKey, setShowApiKey] = useState(false);
+  const [busyAction, setBusyAction] = useState<"save" | "test" | "discover" | "delete" | null>(null);
 
   const active = useMemo(
     () => providers.find((item) => item.id === selectedProviderId),
@@ -50,7 +53,7 @@ export function ProvidersPage() {
     }
   }, [active]);
 
-  const openDrawer = (provider?: typeof form) => {
+  const openDrawer = (provider?: ProviderRecord) => {
     if (provider) {
       const normalized = { ...provider, type: normalizeProviderType(provider.type) };
       setForm(normalized);
@@ -67,17 +70,35 @@ export function ProvidersPage() {
   const closeDrawer = () => {
     setDrawerOpen(false);
     setShowApiKey(false);
+    setBusyAction(null);
   };
 
   const handleSave = async () => {
+    setBusyAction("save");
     await saveProvider({ ...form, type: normalizeProviderType(form.type) });
+    setBusyAction(null);
     closeDrawer();
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("确定删除此厂商？")) return;
+    if (!confirm("确定删除此 Provider？删除后相关路由和密钥可能无法再命中该上游线路。")) return;
+    setBusyAction("delete");
     await deleteProvider(id);
+    setBusyAction(null);
     if (form.id === id) closeDrawer();
+  };
+
+  const handleTest = async () => {
+    setBusyAction("test");
+    await testProvider(form.id);
+    setBusyAction(null);
+  };
+
+  const handleDiscover = async () => {
+    setBusyAction("discover");
+    const models = await discoverProviderModels(form.id);
+    setBusyAction(null);
+    if (models.length) setForm({ ...form, models });
   };
 
   const moveProvider = (id: string, direction: -1 | 1) => {
@@ -112,6 +133,7 @@ export function ProvidersPage() {
         <div className="section-header-main">
           <span className="eyebrow">模型接入</span>
           <h2 className="section-title">厂商管理</h2>
+          <p className="section-description">Provider 是 TokenBridge 连接上游模型服务的出口。先看健康状态，再调整优先级、模型列表和速率限制。</p>
         </div>
         <div className="section-actions">
           <button type="button" className="btn btn-primary btn-sm" onClick={() => openDrawer()}>
@@ -124,14 +146,25 @@ export function ProvidersPage() {
         <span className="pill pill-neutral">总数 {providers.length}</span>
         <span className="pill pill-success">在线 {providers.filter((p) => p.status === "healthy").length}</span>
         <span className="pill pill-warning">异常 {providers.filter((p) => p.status === "warning").length}</span>
+        <span className="pill pill-neutral">已停用 {providers.filter((p) => p.status === "disabled" || p.enabled === false).length}</span>
       </div>
 
       <div className="flex-col gap-2 list-animate">
         {providers.map((provider, index) => (
           <div
             key={provider.id}
-            className="list-row"
+            className={clsx("list-row", selectedProviderId === provider.id && "active")}
             style={{ "--index": index } as React.CSSProperties}
+            role="button"
+            tabIndex={0}
+            aria-label={`编辑 ${provider.name}，状态 ${providerStatusMap[provider.status] ?? provider.status}`}
+            onClick={() => openDrawer(provider)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                openDrawer(provider);
+              }
+            }}
           >
             <div className="list-row-main">
               <div className="flex items-center gap-2">
@@ -178,16 +211,16 @@ export function ProvidersPage() {
               </span>
             </div>
             <div className="list-row-actions">
-              <button type="button" className="btn btn-ghost btn-sm" disabled={index === 0} onClick={(e) => { e.stopPropagation(); moveProvider(provider.id, -1); }} title="上移">
+              <button type="button" className="btn btn-ghost btn-sm" disabled={index === 0} onClick={(e) => { e.stopPropagation(); moveProvider(provider.id, -1); }} title="上移" aria-label={`上移 ${provider.name}`}>
                 <ArrowUp size={14} />
               </button>
-              <button type="button" className="btn btn-ghost btn-sm" disabled={index === providers.length - 1} onClick={(e) => { e.stopPropagation(); moveProvider(provider.id, 1); }} title="下移">
+              <button type="button" className="btn btn-ghost btn-sm" disabled={index === providers.length - 1} onClick={(e) => { e.stopPropagation(); moveProvider(provider.id, 1); }} title="下移" aria-label={`下移 ${provider.name}`}>
                 <ArrowDown size={14} />
               </button>
               <button type="button" className="btn btn-secondary btn-sm" onClick={(e) => { e.stopPropagation(); openDrawer(provider); }}>
                 编辑
               </button>
-              <button type="button" className="btn btn-danger btn-sm" onClick={(e) => { e.stopPropagation(); void handleDelete(provider.id); }}>
+              <button type="button" className="btn btn-danger btn-sm" onClick={(e) => { e.stopPropagation(); void handleDelete(provider.id); }} aria-label={`删除 ${provider.name}`}>
                 <Trash2 size={14} />
               </button>
             </div>
@@ -196,9 +229,13 @@ export function ProvidersPage() {
 
         {providers.length === 0 && (
           <div className="empty-state">
-            <span style={{ fontSize: "1.25rem", color: "var(--text-tertiary)" }}>○</span>
             <span className="empty-state-title">暂无厂商</span>
-            <span className="empty-state-desc">点击右上角“新建厂商”添加第一个模型接入点</span>
+            <span className="empty-state-desc">添加第一个 Provider 后，应用就可以通过本地网关转发模型请求。</span>
+            <div className="empty-state-actions">
+              <button type="button" className="btn btn-primary btn-sm" onClick={() => openDrawer()}>
+                <Plus size={14} /> 新建厂商
+              </button>
+            </div>
           </div>
         )}
       </div>
@@ -206,7 +243,7 @@ export function ProvidersPage() {
       {drawerOpen && (
         <>
           <div className="drawer-overlay" onClick={closeDrawer} />
-          <aside className="drawer">
+          <aside className="drawer drawer-wide" role="dialog" aria-modal="true" aria-label="Provider 配置">
             <div className="drawer-header">
               <div>
                 <h3 className="section-title">{form.name}</h3>
@@ -214,7 +251,7 @@ export function ProvidersPage() {
                   {hasUnsavedChanges ? "有未保存的变更" : "厂商详情与配置"}
                 </p>
               </div>
-              <button type="button" className="btn btn-ghost btn-icon" onClick={closeDrawer}>
+              <button type="button" className="btn btn-ghost btn-icon" onClick={closeDrawer} aria-label="关闭 Provider 配置">
                 <X size={16} />
               </button>
             </div>
@@ -228,19 +265,11 @@ export function ProvidersPage() {
 
                 <div className="form-field span-2">
                   <label className="form-label">接入类型</label>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "var(--space-2)" }}>
+                  <div className="radio-card-grid">
                     {providerTypeOptions.map((option) => (
                       <label
                         key={option.value}
-                        className="flex-col gap-1"
-                        style={{
-                          cursor: "pointer",
-                          padding: "var(--space-3)",
-                          borderRadius: "var(--radius-sm)",
-                          background: normalizedFormType === option.value ? "var(--accent-dim)" : "var(--bg-base)",
-                          border: normalizedFormType === option.value ? "1px solid var(--accent)" : "1px solid var(--border-subtle)",
-                          transition: "all 150ms ease"
-                        }}
+                        className={clsx("radio-card", normalizedFormType === option.value && "active")}
                       >
                         <input
                           type="radio"
@@ -309,6 +338,18 @@ export function ProvidersPage() {
                   />
                   <span className="form-hint">支持逗号或换行分隔。Claude 模型应走 Anthropic 类型；DeepSeek/OpenRouter 等走 OpenAI 兼容。</span>
                 </div>
+
+                <div className="form-field span-2">
+                  <label className="form-label" style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                    <input
+                      type="checkbox"
+                      checked={form.enabled !== false && form.status !== "disabled"}
+                      onChange={(e) => setForm({ ...form, enabled: e.target.checked, status: e.target.checked ? "healthy" : "disabled" })}
+                    />
+                    <span>启用此 Provider</span>
+                  </label>
+                  <span className="form-hint">停用后不会再作为主链路或备用链路参与真实请求。</span>
+                </div>
               </div>
 
               <div className="flex items-center gap-2">
@@ -319,12 +360,19 @@ export function ProvidersPage() {
             </div>
 
             <div className="drawer-footer">
-              <button type="button" className="btn btn-primary" onClick={() => void handleSave()}>保存配置</button>
-              <button type="button" className="btn btn-secondary" onClick={() => void testProvider(form.id)}><Wifi size={14} /> 测试连接</button>
-              <button type="button" className="btn btn-secondary" onClick={async () => { const models = await discoverProviderModels(form.id); if (models.length) setForm({ ...form, models }); }}>
-                <RefreshCcw size={14} /> 发现模型
+              <button type="button" className="btn btn-primary" onClick={() => void handleSave()} disabled={busyAction !== null}>
+                {busyAction === "save" ? <Loader2 size={14} className="spin" /> : null}
+                保存配置
               </button>
-              <button type="button" className="btn btn-danger" onClick={() => void handleDelete(form.id)}><Trash2 size={14} /> 删除</button>
+              <button type="button" className="btn btn-secondary" onClick={() => void handleTest()} disabled={busyAction !== null}>
+                {busyAction === "test" ? <Loader2 size={14} className="spin" /> : <Wifi size={14} />} 测试连接
+              </button>
+              <button type="button" className="btn btn-secondary" onClick={() => void handleDiscover()} disabled={busyAction !== null}>
+                {busyAction === "discover" ? <Loader2 size={14} className="spin" /> : <RefreshCcw size={14} />} 发现模型
+              </button>
+              <button type="button" className="btn btn-danger" onClick={() => void handleDelete(form.id)} disabled={busyAction !== null}>
+                {busyAction === "delete" ? <Loader2 size={14} className="spin" /> : <Trash2 size={14} />} 删除
+              </button>
             </div>
           </aside>
         </>

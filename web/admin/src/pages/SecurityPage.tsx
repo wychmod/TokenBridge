@@ -11,7 +11,7 @@ export function SecurityPage() {
         <SectionHeader
           eyebrow="安全中心"
           title="登录保护与安全基线"
-          description="安全页先承载生产基线说明和管理员入口，真实会话能力后续由后端认证模块接入。"
+          description="这里把默认本地访问、管理员入口、日志敏感边界和后续登录能力放在一个低噪声页面中，避免普通用户误开公网暴露。"
           actions={
             <button
               type="button"

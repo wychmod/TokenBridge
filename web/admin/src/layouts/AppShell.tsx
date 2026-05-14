@@ -56,25 +56,25 @@ import {
 } from "../utils/desktop-bridge";
 
 const navItems = [
-  { to: "/dashboard", label: "总台", icon: LayoutDashboard, group: "运营" },
-  { to: "/providers", label: "厂商", icon: Network, group: "运营" },
-  { to: "/keys", label: "密钥", icon: KeyRound, group: "运营" },
-  { to: "/routing", label: "路由", icon: Route, group: "运营" },
-  { to: "/analytics", label: "分析", icon: BarChart3, group: "运营" },
-  { to: "/ai-tool-usage", label: "AI 成本", icon: Bot, group: "运营" },
-  { to: "/logs", label: "日志", icon: ScrollText, group: "运营" },
-  { to: "/pricing", label: "定价", icon: DollarSign, group: "运营" },
-  { to: "/quick-setup", label: "接入助手", icon: Rocket, group: "交付" },
-  { to: "/bootstrap", label: "启用引导", icon: WandSparkles, group: "交付" },
-  { to: "/security", label: "安全", icon: LockKeyhole, group: "交付" },
-  { to: "/release-status", label: "发布", icon: PackageCheck, group: "交付" },
-  { to: "/version", label: "版本", icon: Hash, group: "交付" },
-  { to: "/build-checks", label: "检查", icon: FileCheck2, group: "交付" },
-  { to: "/bootstrap/success", label: "完成", icon: ShieldCheck, group: "交付", hidden: true },
-  { to: "/settings", label: "设置", icon: Settings, group: "系统" }
+  { to: "/dashboard", label: "总览", icon: LayoutDashboard, group: "运行", description: "网关是否正常、花费多少、哪里需要处理" },
+  { to: "/providers", label: "Provider 接入", icon: Network, group: "配置", description: "上游厂商、模型、优先级和连接健康" },
+  { to: "/keys", label: "Local Keys", icon: KeyRound, group: "配置", description: "本地密钥、权限、预算、轮换和吊销" },
+  { to: "/routing", label: "路由策略", icon: Route, group: "配置", description: "模型别名、主链路、Fallback 和路由模拟" },
+  { to: "/analytics", label: "调用分析", icon: BarChart3, group: "观测", description: "请求量、成功率、成本和模型分布趋势" },
+  { to: "/ai-tool-usage", label: "AI 工具用量", icon: Bot, group: "观测", description: "本地 AI Coding 工具成本与日志来源" },
+  { to: "/logs", label: "请求日志", icon: ScrollText, group: "观测", description: "Trace、状态码、Fallback、错误原因和导出" },
+  { to: "/pricing", label: "模型定价", icon: DollarSign, group: "观测", description: "模型价格、上下文、能力标签和费用估算" },
+  { to: "/quick-setup", label: "接入助手", icon: Rocket, group: "交付", description: "复制工具配置并验证本地网关地址" },
+  { to: "/bootstrap", label: "启用引导", icon: WandSparkles, group: "交付", description: "首次运行边界、安全基线和下一步" },
+  { to: "/security", label: "安全中心", icon: LockKeyhole, group: "交付", description: "管理员入口、本地监听和敏感数据边界" },
+  { to: "/release-status", label: "发布状态", icon: PackageCheck, group: "交付", description: "便携包、嵌入资源和桌面交付状态" },
+  { to: "/version", label: "版本信息", icon: Hash, group: "交付", description: "运行形态、版本、安全状态和平台基线" },
+  { to: "/build-checks", label: "构建检查", icon: FileCheck2, group: "交付", description: "发布前资源、数据库、端口和打包检查" },
+  { to: "/bootstrap/success", label: "完成", icon: ShieldCheck, group: "交付", description: "初始化完成状态", hidden: true },
+  { to: "/settings", label: "系统设置", icon: Settings, group: "系统", description: "监听、主题、备份、日志保留和分发参数" }
 ];
 
-const navGroups = ["运营", "交付", "系统"] as const;
+const navGroups = ["运行", "配置", "观测", "交付", "系统"] as const;
 
 const themeMeta = {
   light: { label: "浅色", icon: Sun },
@@ -203,7 +203,11 @@ export function AppShell({ children }: PropsWithChildren) {
     };
   }, [location.pathname, navigate, pushNotice]);
 
-  const currentPage = useMemo(() => navItems.find((item) => location.pathname.startsWith(item.to)) ?? navItems[0], [location.pathname]);
+  const currentPage = useMemo(() => {
+    return [...navItems]
+      .sort((a, b) => b.to.length - a.to.length)
+      .find((item) => location.pathname === item.to || location.pathname.startsWith(`${item.to}/`)) ?? navItems[0];
+  }, [location.pathname]);
   const healthyProviders = providers.filter((provider) => provider.status === "healthy").length;
   const resolvedTheme = themeMeta[theme];
   const ThemeIcon = resolvedTheme.icon;
@@ -243,13 +247,13 @@ export function AppShell({ children }: PropsWithChildren) {
             <button type="button" className="btn btn-ghost btn-sm" onClick={() => hideDesktopToTray()}>
               <span style={{ fontSize: "0.75rem" }}>隐藏到托盘</span>
             </button>
-            <button type="button" className="btn btn-ghost btn-icon" onClick={() => minimiseDesktopWindow()}>
+            <button type="button" className="btn btn-ghost btn-icon" onClick={() => minimiseDesktopWindow()} aria-label="最小化窗口">
               <Minus size={14} />
             </button>
-            <button type="button" className="btn btn-ghost btn-icon" onClick={handleToggleMaximise}>
+            <button type="button" className="btn btn-ghost btn-icon" onClick={handleToggleMaximise} aria-label={desktopMaximised ? "还原窗口" : "最大化窗口"}>
               {desktopMaximised ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
             </button>
-            <button type="button" className="btn btn-danger btn-icon" onClick={() => hideDesktopToTray()} title="隐藏到托盘">
+            <button type="button" className="btn btn-danger btn-icon" onClick={() => hideDesktopToTray()} title="隐藏到托盘" aria-label="隐藏到托盘">
               <X size={14} />
             </button>
           </div>
@@ -263,7 +267,7 @@ export function AppShell({ children }: PropsWithChildren) {
           <span>TokenBridge</span>
         </div>
 
-        <nav className="sidebar-nav">
+        <nav className="sidebar-nav" aria-label="TokenBridge 主导航">
           {navGroups.map((group) => {
             const items = navItems.filter((item) => item.group === group && !item.hidden);
             if (items.length === 0) return null;
@@ -278,6 +282,7 @@ export function AppShell({ children }: PropsWithChildren) {
                       to={item.to}
                       className={({ isActive }) => clsx("nav-item", isActive && "active")}
                       title={item.label}
+                      aria-label={`${item.label}：${item.description}`}
                     >
                       <Icon size={18} className="nav-icon" />
                       <span className="nav-label">{item.label}</span>
@@ -312,12 +317,14 @@ export function AppShell({ children }: PropsWithChildren) {
         <header className="topbar">
           <div className="topbar-leading">
             <h1 className="page-title" style={{ fontSize: "1.15rem" }}>{currentPage?.label ?? "TokenBridge 控制台"}</h1>
+            <p className="page-kicker">{currentPage?.description ?? "本地 AI 网关控制平面"}</p>
           </div>
           <div className="topbar-actions">
             <button
               type="button"
               className="btn btn-ghost btn-icon"
               title={`当前主题：${resolvedTheme.label}，点击切换`}
+              aria-label={`当前主题：${resolvedTheme.label}，点击切换`}
               onClick={cycleTheme}
             >
               <ThemeIcon size={16} />
@@ -326,6 +333,7 @@ export function AppShell({ children }: PropsWithChildren) {
               type="button"
               className="btn btn-ghost btn-icon"
               title="通知"
+              aria-label="打开通知和日志"
               onClick={() => navigate("/logs")}
               style={{ position: "relative" }}
             >
@@ -348,7 +356,7 @@ export function AppShell({ children }: PropsWithChildren) {
 
         {/* Notices */}
         {notices.length > 0 && (
-          <section className="notice-stack">
+          <section className="notice-stack" aria-live="polite" aria-label="系统通知">
             {notices.map((notice) => (
               <article key={notice.id} className={clsx("notice-item", notice.tone)}>
                 <div className="notice-body">

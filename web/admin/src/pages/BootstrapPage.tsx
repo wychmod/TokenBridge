@@ -33,7 +33,7 @@ export function BootstrapPage() {
         <SectionHeader
           eyebrow="启用引导"
           title="TokenBridge 首次启用向导"
-          description="把第一次打开后的关键检查收束成一条清晰路径：先确认运行边界，再进入模型网关配置。"
+          description="用少量步骤确认“本地服务是否开着、账号是否明确、接下来该配什么”，再进入完整控制台。"
           actions={
             <button type="button" className="btn btn-primary" onClick={completeBootstrap}>
               <Wand2 size={16} /> 标记为已启用

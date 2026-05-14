@@ -36,7 +36,7 @@ export function QuickSetupPage() {
       <SectionHeader
         eyebrow="接入助手"
         title="TokenBridge 接入说明"
-        description="面向 Codex、Claude Desktop、Cursor 等工具生成接入模板，直接使用真实监听地址和当前首个 Local Key。"
+        description="像向导一样给出当前状态、下一步和可复制配置。不了解 Provider / Token 的用户也可以按卡片完成接入。"
         actions={
           <button
             type="button"
@@ -52,6 +52,7 @@ export function QuickSetupPage() {
         <div className="metric-pill">预设方案 {setups.length}</div>
         <div className="metric-pill">主用密钥 {currentKey.name}</div>
         <div className="metric-pill">网关地址 {gatewayBase}/v1</div>
+        <div className="metric-pill">下一步：复制配置并在工具里验证一次请求</div>
       </div>
 
       <div className="setup-grid">

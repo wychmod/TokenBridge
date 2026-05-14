@@ -21,7 +21,7 @@ export function ReleaseStatusPage() {
         <SectionHeader
           eyebrow="发布状态"
           title="便携版分发与发布状态"
-          description="围绕“下载后直接用”的桌面交付目标，把构建、嵌入资源和运行自检状态集中展示。"
+          description="围绕“下载后直接用”的桌面交付目标，把构建、嵌入资源、默认配置和运行自检状态集中展示。"
           actions={
             <button
               type="button"

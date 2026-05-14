@@ -239,7 +239,7 @@ export function PricingPage() {
         <div className="pricing-hero-copy">
           <span className="eyebrow">Billing Catalog</span>
           <h2>模型定价矩阵</h2>
-          <p>统一查看输入、输出、上下文与能力标签，便于快速对比模型成本和兜底计价状态。</p>
+          <p>统一查看输入、输出、上下文与能力标签，把“这个模型贵不贵、能不能缓存、是否适合当前请求”讲清楚。</p>
         </div>
         <div className="pricing-hero-actions">
           <button type="button" className="btn btn-primary btn-sm" onClick={handleRefresh} disabled={syncing}>
@@ -266,13 +266,13 @@ export function PricingPage() {
       </section>
 
       <div className="pricing-tabs tabs" role="tablist" aria-label="定价工具">
-        <button type="button" className={`tab ${activeTab === "browse" ? "active" : ""}`} onClick={() => setActiveTab("browse")}>
+        <button type="button" role="tab" aria-selected={activeTab === "browse"} className={`tab ${activeTab === "browse" ? "active" : ""}`} onClick={() => setActiveTab("browse")}>
           定价浏览
         </button>
-        <button type="button" className={`tab ${activeTab === "lookup" ? "active" : ""}`} onClick={() => setActiveTab("lookup")}>
+        <button type="button" role="tab" aria-selected={activeTab === "lookup"} className={`tab ${activeTab === "lookup" ? "active" : ""}`} onClick={() => setActiveTab("lookup")}>
           模型查询
         </button>
-        <button type="button" className={`tab ${activeTab === "estimate" ? "active" : ""}`} onClick={() => setActiveTab("estimate")}>
+        <button type="button" role="tab" aria-selected={activeTab === "estimate"} className={`tab ${activeTab === "estimate" ? "active" : ""}`} onClick={() => setActiveTab("estimate")}>
           费用估算
         </button>
       </div>
@@ -284,6 +284,7 @@ export function PricingPage() {
               <Search size={15} />
               <input
                 className="form-control"
+                aria-label="搜索模型名、Provider 或类型"
                 placeholder="搜索模型名、Provider 或类型..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
@@ -328,7 +329,7 @@ export function PricingPage() {
                   {visibleModels.length === 0 ? (
                     <tr>
                       <td colSpan={8}>
-                        <div className="pricing-empty">暂无匹配的定价数据</div>
+                        <div className="pricing-empty">暂无匹配的定价数据。请清空搜索词或切换模型类型。</div>
                       </td>
                     </tr>
                   ) : (
@@ -400,12 +401,14 @@ export function PricingPage() {
             <div className="section-header-main">
               <span className="eyebrow">Precise Lookup</span>
               <h3 className="section-title">模型查询</h3>
+              <p className="section-description">用于确认某个模型是否有精确价格，若没有则显示兜底价格来源。</p>
             </div>
           </div>
 
           <div className="pricing-action-row">
             <input
               className="form-control"
+              aria-label="输入模型 ID 查询定价"
               placeholder="输入模型 ID，如 gpt-4o、claude-3-5-sonnet..."
               value={lookupModel}
               onChange={(e) => setLookupModel(e.target.value)}
@@ -429,6 +432,7 @@ export function PricingPage() {
             <div className="section-header-main">
               <span className="eyebrow">Cost Estimate</span>
               <h3 className="section-title">请求费用估算</h3>
+              <p className="section-description">输入模型和 Token 数，即可估算一次请求的大致费用。</p>
             </div>
           </div>
 

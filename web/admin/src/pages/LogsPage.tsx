@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Download, Search, X, ChevronDown, ChevronUp, Zap } from "lucide-react";
+import { AlertTriangle, Copy, Download, Search, ChevronDown, ChevronUp, Zap } from "lucide-react";
 
 type LogItem = {
   id: string;
@@ -83,6 +83,17 @@ export function LogsPage() {
     window.open(`/admin/api/logs/export?${params.toString()}`, "_blank");
   };
 
+  const clearFilters = () => {
+    setQuery("");
+    setTraceQuery("");
+    setFromDate("");
+    setToDate("");
+    setOnlyFallback(false);
+    setStatusFilter("all");
+    setProviderFilter("");
+    setApiFormatFilter("");
+  };
+
   const statusDot = (code: number) => {
     if (code >= 500) return "var(--danger)";
     if (code >= 400) return "var(--warning)";
@@ -106,6 +117,7 @@ export function LogsPage() {
         <div className="section-header-main">
           <span className="eyebrow">运行记录</span>
           <h2 className="section-title">日志检索</h2>
+          <p className="section-description">围绕 Trace ID、Provider、状态码、Fallback 和时间范围排查失败请求。左侧定位，右侧复现链路。</p>
         </div>
         <div className="section-actions">
           <button
@@ -118,12 +130,15 @@ export function LogsPage() {
           <button type="button" className="btn btn-secondary btn-sm" onClick={handleExport}>
             <Download size={13} /> 导出
           </button>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={clearFilters}>
+            清空筛选
+          </button>
         </div>
       </div>
 
       {/* Compact Filters */}
       <div className="panel panel-compact flex-col gap-3">
-        <div className="flex items-center gap-2">
+        <div className="toolbar-row">
           <div className="secret-input" style={{ flex: 1 }}>
             <Search size={16} style={{ color: "var(--text-tertiary)", flexShrink: 0 }} />
             <input
@@ -185,7 +200,7 @@ export function LogsPage() {
       </div>
 
       {/* Logs Table + Detail */}
-      <div style={{ display: "grid", gridTemplateColumns: "1.2fr 0.8fr", gap: "var(--space-4)", minHeight: 400 }}>
+      <div className="logs-grid" style={{ minHeight: 400 }}>
         {/* Log List */}
         <div className="flex-col gap-1">
           {loading && logs.length === 0 ? (
@@ -208,6 +223,7 @@ export function LogsPage() {
                   key={log.id}
                   type="button"
                   className="list-row"
+                  aria-label={`${log.path}，状态 ${log.status_label}，延迟 ${log.latency_ms}ms`}
                   style={{
                     "--index": index,
                     padding: "var(--space-2) var(--space-3)",
@@ -254,7 +270,10 @@ export function LogsPage() {
           ) : (
             <div className="empty-state">
               <span className="empty-state-title">没有匹配到日志</span>
-              <span className="empty-state-desc">换个筛选条件试试</span>
+              <span className="empty-state-desc">换个筛选条件试试，或者清空筛选回到最近 100 条请求。</span>
+              <div className="empty-state-actions">
+                <button type="button" className="btn btn-secondary btn-sm" onClick={clearFilters}>清空筛选</button>
+              </div>
             </div>
           )}
         </div>
@@ -284,6 +303,17 @@ export function LogsPage() {
                   </div>
                 ))}
               </div>
+
+              {active.trace_id ? (
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  style={{ alignSelf: "flex-start" }}
+                  onClick={() => void navigator.clipboard?.writeText(active.trace_id)}
+                >
+                  <Copy size={14} /> 复制 Trace ID
+                </button>
+              ) : null}
 
               <div className="flex-col gap-2" style={{ padding: "var(--space-3) 0", borderTop: "1px solid var(--border-subtle)" }}>
                 <strong style={{ fontSize: "0.82rem" }}>详细说明</strong>

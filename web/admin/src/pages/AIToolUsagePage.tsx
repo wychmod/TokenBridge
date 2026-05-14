@@ -6,6 +6,7 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  Legend,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -82,7 +83,7 @@ export function AIToolUsagePage() {
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [widgetOpen, setWidgetOpen] = useState(true);
+  const [widgetOpen, setWidgetOpen] = useState(false);
   const [widgetOpacity, setWidgetOpacity] = useState(92);
   const [widgetSize, setWidgetSize] = useState<WidgetSize>("compact");
 
@@ -285,10 +286,19 @@ export function AIToolUsagePage() {
                 <XAxis dataKey="day" stroke="var(--text-tertiary)" fontSize={12} tickLine={false} axisLine={false} />
                 <YAxis stroke="var(--text-tertiary)" fontSize={12} tickLine={false} axisLine={false} width={48} />
                 <Tooltip content={<ChartTooltip money={display.money} metric={metric} />} />
-                <Area type="monotone" dataKey={metric === "cost" ? "cost" : metric} stroke="var(--accent)" strokeWidth={2} fill="url(#aiUsageFill)" />
+                <Legend verticalAlign="top" height={28} />
+                <Area
+                  type="monotone"
+                  dataKey={metric === "cost" ? "cost" : metric}
+                  name={metric === "cost" ? "成本" : metric === "requests" ? "请求数" : "Token"}
+                  stroke="var(--accent)"
+                  strokeWidth={2}
+                  fill="url(#aiUsageFill)"
+                />
               </AreaChart>
             </ResponsiveContainer>
           </div>
+          <p className="chart-note">成本可在 CNY/USD 间切换；请求和 Token 维度用于判断工具使用强度。</p>
         </article>
 
         <article className="panel ai-chart-panel">
@@ -298,7 +308,8 @@ export function AIToolUsagePage() {
               <h3 className="section-title">成本占比与工具来源</h3>
             </div>
           </div>
-          <div className="ai-pie-layout">
+          {modelDistribution.length ? (
+            <div className="ai-pie-layout">
             <ResponsiveContainer width="100%" height={220}>
               <PieChart>
                 <Pie data={modelDistribution} dataKey="cost" nameKey="name" innerRadius={54} outerRadius={86} paddingAngle={2}>
@@ -323,7 +334,10 @@ export function AIToolUsagePage() {
                 <span key={item.name}>{item.name}: {display.money(item.cost_usd)}</span>
               ))}
             </div>
-          </div>
+            </div>
+          ) : (
+            <div className="chart-empty">暂无模型成本分布。执行扫描后会显示模型占比和工具来源。</div>
+          )}
         </article>
       </section>
 
@@ -342,7 +356,8 @@ export function AIToolUsagePage() {
                 <XAxis type="number" stroke="var(--text-tertiary)" fontSize={12} tickLine={false} axisLine={false} />
                 <YAxis dataKey="name" type="category" width={120} stroke="var(--text-secondary)" fontSize={12} tickLine={false} axisLine={false} />
                 <Tooltip formatter={(value: number) => display.money(value)} />
-                <Bar dataKey="cost" radius={[0, 4, 4, 0]} barSize={18} fill="var(--info)" />
+                <Legend verticalAlign="top" height={28} />
+                <Bar dataKey="cost" name="成本" radius={[0, 4, 4, 0]} barSize={18} fill="var(--info)" />
               </BarChart>
             </ResponsiveContainer>
           </div>

@@ -81,6 +81,7 @@ export function SettingsPage() {
         <div className="section-header-main">
           <span className="eyebrow">系统管理</span>
           <h2 className="section-title">设置</h2>
+          <p className="section-description">集中管理本地监听、后台入口、主题、日志保留、备份和桌面分发参数。危险操作会在执行前确认。</p>
         </div>
       </div>
 
@@ -393,7 +394,10 @@ export function SettingsPage() {
               <button
                 type="button"
                 className="btn btn-danger btn-sm"
-                onClick={() => pushNotice({ tone: "info", title: "日志清理", message: "自动清理任务已触发。" })}
+                onClick={() => {
+                  if (!confirm(`确定清理超过 ${form.retentionDays} 天的旧日志？清理后无法在控制台继续检索这些历史记录。`)) return;
+                  pushNotice({ tone: "info", title: "日志清理", message: "自动清理任务已触发。" });
+                }}
               >
                 清理
               </button>

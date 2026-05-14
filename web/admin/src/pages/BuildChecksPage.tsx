@@ -25,7 +25,7 @@ export function BuildChecksPage() {
         <SectionHeader
           eyebrow="构建检查"
           title="发布前检查清单"
-          description="在发布桌面版或便携版前，逐项核对 Provider、数据库、资源、端口和打包产物。"
+          description="面向桌面端分发的发布闸口：逐项核对 Provider、数据库、前端资源、端口和打包产物，避免把不可运行的包交付给用户。"
           actions={
             <button type="button" className="btn btn-primary" onClick={() => void runDesktopSelfCheck().then(setReport)}>
               <ScanSearch size={16} /> 重新执行检查

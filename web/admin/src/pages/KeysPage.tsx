@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { CalendarClock, Copy, RotateCcw, ShieldAlert, X } from "lucide-react";
+import { CalendarClock, Copy, Loader2, Plus, RotateCcw, ShieldAlert, X } from "lucide-react";
+import clsx from "clsx";
 import { useAdminStore } from "../store/admin-store";
 import { keyStatusMap } from "../store/labels";
+import type { LocalKeyRecord } from "../store/entities";
 
-const createEmptyKey = () => ({
+const createEmptyKey = (): LocalKeyRecord => ({
   id: `key-${Date.now()}`,
   name: "新本地密钥",
   displayKey: `tb-${Math.random().toString(36).slice(2, 6)}****${Math.random().toString(36).slice(2, 6)}`,
@@ -24,8 +26,9 @@ export function KeysPage() {
   const { keys, providers, selectedKeyId, setSelectedKey, saveKey, rotateKey, revokeKey, extendKey, pushNotice } = useAdminStore();
 
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [form, setForm] = useState<ReturnType<typeof createEmptyKey>>(createEmptyKey());
+  const [form, setForm] = useState<LocalKeyRecord>(createEmptyKey());
   const [expiresAt, setExpiresAt] = useState("");
+  const [busyAction, setBusyAction] = useState<"save" | "rotate" | "extend" | "revoke" | null>(null);
 
   const active = useMemo(() => keys.find((item) => item.id === selectedKeyId) ?? keys[0], [keys, selectedKeyId]);
 
@@ -47,7 +50,7 @@ export function KeysPage() {
     }
   }, [active]);
 
-  const openDrawer = (key?: typeof form) => {
+  const openDrawer = (key?: LocalKeyRecord) => {
     if (key) {
       setForm(key);
       setSelectedKey(key.id);
@@ -59,12 +62,15 @@ export function KeysPage() {
     setDrawerOpen(true);
   };
 
-  const closeDrawer = () => setDrawerOpen(false);
+  const closeDrawer = () => {
+    setDrawerOpen(false);
+    setBusyAction(null);
+  };
 
   const spendUsage = Math.min(100, Math.round((form.currentSpend / Math.max(form.monthlyBudget, 1)) * 100));
   const tokenUsage = Math.min(100, Math.round((form.currentTokens / Math.max(form.tokenBudget, 1)) * 100));
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (selectedProviders.length === 0) {
       pushNotice({ tone: "warning", title: "请选择厂商", message: "本地 API 需要绑定至少一个允许厂商。" });
       return;
@@ -73,19 +79,35 @@ export function KeysPage() {
       pushNotice({ tone: "warning", title: "请选择模型", message: "本地 API 需要绑定至少一个所选厂商支持的模型。" });
       return;
     }
-    void saveKey({
+    setBusyAction("save");
+    await saveKey({
       ...form,
       allowedProviders: selectedProviders,
       allowedModels: selectedModels,
       expires_at: expiresAt ? `${expiresAt}T23:59:59Z` : null
     });
+    setBusyAction(null);
     closeDrawer();
   };
 
-  const handleRevoke = (id: string) => {
-    if (!confirm("确定吊销此密钥？此操作不可恢复。")) return;
-    void revokeKey(id);
+  const handleRevoke = async (id: string) => {
+    if (!confirm("确定吊销此 Local Key？吊销后使用它的本地工具会立即鉴权失败，此操作不可恢复。")) return;
+    setBusyAction("revoke");
+    await revokeKey(id);
+    setBusyAction(null);
     if (form.id === id) closeDrawer();
+  };
+
+  const handleRotate = async () => {
+    setBusyAction("rotate");
+    await rotateKey(form.id);
+    setBusyAction(null);
+  };
+
+  const handleExtend = async () => {
+    setBusyAction("extend");
+    await extendKey(form.id, expiresAt ? `${expiresAt}T23:59:59Z` : null);
+    setBusyAction(null);
   };
 
   return (
@@ -95,10 +117,11 @@ export function KeysPage() {
         <div className="section-header-main">
           <span className="eyebrow">访问控制</span>
           <h2 className="section-title">密钥管理</h2>
+          <p className="section-description">Local Key 是给本地工具使用的访问凭证，用来隔离上游 Provider Key，并控制模型、预算和有效期。</p>
         </div>
         <div className="section-actions">
           <button type="button" className="btn btn-primary btn-sm" onClick={() => openDrawer()}>
-            新建密钥
+            <Plus size={14} /> 新建密钥
           </button>
         </div>
       </div>
@@ -117,8 +140,18 @@ export function KeysPage() {
           return (
             <div
               key={key.id}
-              className="list-row"
+              className={clsx("list-row", key.id === selectedKeyId && "active")}
               style={{ "--index": index } as React.CSSProperties}
+              role="button"
+              tabIndex={0}
+              aria-label={`编辑 ${key.name}，状态 ${keyStatusMap[key.status] ?? key.status}`}
+              onClick={() => openDrawer(key)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  openDrawer(key);
+                }
+              }}
             >
               <div className="list-row-main">
                 <div className="flex items-center gap-2">
@@ -173,6 +206,7 @@ export function KeysPage() {
                   type="button"
                   className="btn btn-danger btn-sm"
                   onClick={(e) => { e.stopPropagation(); void handleRevoke(key.id); }}
+                  aria-label={`吊销 ${key.name}`}
                 >
                   <ShieldAlert size={14} />
                 </button>
@@ -183,9 +217,13 @@ export function KeysPage() {
 
         {keys.length === 0 && (
           <div className="empty-state">
-            <span style={{ fontSize: "1.25rem", color: "var(--text-tertiary)" }}>○</span>
             <span className="empty-state-title">暂无密钥</span>
-            <span className="empty-state-desc">点击右上角"新建密钥"创建第一个本地 API Key</span>
+            <span className="empty-state-desc">创建 Local Key 后，把它复制到 Codex、Cursor 或 Claude Desktop 等本地工具里。</span>
+            <div className="empty-state-actions">
+              <button type="button" className="btn btn-primary btn-sm" onClick={() => openDrawer()}>
+                <Plus size={14} /> 新建密钥
+              </button>
+            </div>
           </div>
         )}
       </div>
@@ -194,7 +232,7 @@ export function KeysPage() {
       {drawerOpen && (
         <>
           <div className="drawer-overlay" onClick={closeDrawer} />
-          <aside className="drawer">
+          <aside className="drawer drawer-wide" role="dialog" aria-modal="true" aria-label="Local Key 配置">
             <div className="drawer-header">
               <div>
                 <h3 className="section-title">{form.name}</h3>
@@ -202,7 +240,7 @@ export function KeysPage() {
                   {form.displayKey}
                 </p>
               </div>
-              <button type="button" className="btn btn-ghost btn-icon" onClick={closeDrawer}>
+              <button type="button" className="btn btn-ghost btn-icon" onClick={closeDrawer} aria-label="关闭 Local Key 配置">
                 <X size={16} />
               </button>
             </div>
@@ -339,10 +377,16 @@ export function KeysPage() {
                   </div>
                 </div>
               </div>
+
+              <div className="detail-card danger-zone">
+                <strong>安全提示</strong>
+                <span>轮换会生成新凭证，吊销会让旧凭证立即失效。执行前请确认对应工具已经切换到新的 Local Key。</span>
+              </div>
             </div>
 
             <div className="drawer-footer">
-              <button type="button" className="btn btn-primary" onClick={handleSave}>
+              <button type="button" className="btn btn-primary" onClick={() => void handleSave()} disabled={busyAction !== null}>
+                {busyAction === "save" ? <Loader2 size={14} className="spin" /> : null}
                 保存变更
               </button>
               <button
@@ -355,14 +399,14 @@ export function KeysPage() {
               >
                 <Copy size={14} /> 复制密钥
               </button>
-              <button type="button" className="btn btn-secondary" onClick={() => void rotateKey(form.id)}>
-                <RotateCcw size={14} /> 轮换密钥
+              <button type="button" className="btn btn-secondary" onClick={() => void handleRotate()} disabled={busyAction !== null}>
+                {busyAction === "rotate" ? <Loader2 size={14} className="spin" /> : <RotateCcw size={14} />} 轮换密钥
               </button>
-              <button type="button" className="btn btn-secondary" onClick={() => void extendKey(form.id, expiresAt ? `${expiresAt}T23:59:59Z` : null)}>
-                <CalendarClock size={14} /> 保存有效期
+              <button type="button" className="btn btn-secondary" onClick={() => void handleExtend()} disabled={busyAction !== null}>
+                {busyAction === "extend" ? <Loader2 size={14} className="spin" /> : <CalendarClock size={14} />} 保存有效期
               </button>
-              <button type="button" className="btn btn-danger" onClick={() => void handleRevoke(form.id)}>
-                <ShieldAlert size={14} /> 吊销
+              <button type="button" className="btn btn-danger" onClick={() => void handleRevoke(form.id)} disabled={busyAction !== null}>
+                {busyAction === "revoke" ? <Loader2 size={14} className="spin" /> : <ShieldAlert size={14} />} 吊销
               </button>
             </div>
           </aside>

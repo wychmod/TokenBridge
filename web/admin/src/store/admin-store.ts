@@ -114,7 +114,7 @@ export const useAdminStore = create<AdminState>((set, get) => ({
       get().pushNotice({ tone: "warning", title: "密钥列表加载失败", message: result.error ?? "无法读取后端密钥配置。" });
       return;
     }
-    const keys = result.data.map(mapKeyFromApi);
+    const keys = result.data.map((record) => mapKeyFromApi(record));
     set((state) => ({ keys, selectedKeyId: state.selectedKeyId ?? keys[0]?.id }));
   },
   reloadRules: async () => {

@@ -1,4 +1,4 @@
-import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis } from "recharts";
+import { Area, AreaChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, Loader2, Zap } from "lucide-react";
 import { isDesktopMode } from "../utils/desktop-bridge";
@@ -45,11 +45,18 @@ export function DashboardPage() {
 
   const kpis = useMemo(() => {
     if (!data) return [];
+    const healthyProviders = data.provider_health?.filter((provider) => provider.status === "healthy").length ?? 0;
     return [
       {
         label: "总请求",
         value: data.overview.usage.total_requests.toLocaleString(),
-        delta: `成功率 ${(data.overview.usage.success_rate * 100).toFixed(1)}%`,
+        delta: "所有接入工具的网关调用",
+        healthy: data.overview.usage.success_rate >= 0.95
+      },
+      {
+        label: "成功率",
+        value: `${(data.overview.usage.success_rate * 100).toFixed(1)}%`,
+        delta: data.overview.usage.success_rate >= 0.95 ? "当前链路稳定" : "建议查看失败日志",
         healthy: data.overview.usage.success_rate >= 0.95
       },
       {
@@ -65,9 +72,15 @@ export function DashboardPage() {
         healthy: data.log_stats.failures === 0
       },
       {
+        label: "Fallback",
+        value: String(data.log_stats.fallbacks),
+        delta: data.log_stats.fallbacks > 0 ? "主链路曾切到备用线路" : "未触发备用切换",
+        healthy: data.log_stats.fallbacks === 0
+      },
+      {
         label: "平均延迟",
         value: `${data.log_stats.avg_latency_ms}ms`,
-        delta: `${data.overview.providers} 家厂商在线`,
+        delta: `${healthyProviders}/${data.overview.providers} 家 Provider 健康`,
         healthy: data.log_stats.avg_latency_ms < 1000
       }
     ];
@@ -137,7 +150,7 @@ export function DashboardPage() {
             </div>
           ))}
         </section>
-        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "var(--space-4)" }}>
+        <div className="dashboard-grid">
           <div className="panel" style={{ minHeight: 340 }}>
             <div className="skeleton skeleton-title" style={{ width: "30%" }} />
             <div className="skeleton" style={{ width: "100%", height: 260, marginTop: 16 }} />
@@ -162,6 +175,7 @@ export function DashboardPage() {
         <Zap size={32} style={{ color: "var(--danger)", opacity: 0.6 }} />
         <span className="empty-state-title" style={{ color: "var(--danger)" }}>数据加载失败</span>
         <span className="empty-state-desc">{error}，请检查后端服务是否正常运行。</span>
+        <button type="button" className="btn btn-primary btn-sm" onClick={() => window.location.reload()}>重新加载</button>
       </div>
     );
   }
@@ -190,13 +204,14 @@ export function DashboardPage() {
       </section>
 
       {/* Charts + Alerts */}
-      <section style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "var(--space-4)" }}>
+      <section className="dashboard-grid">
         {/* Cost Trend */}
         <article className="panel">
           <div className="section-header" style={{ marginBottom: "var(--space-4)" }}>
             <div className="section-header-main">
               <span className="eyebrow">用量监控</span>
-              <h2 className="section-title">费用趋势</h2>
+              <h2 className="section-title">请求与费用趋势</h2>
+              <p className="section-description">同时查看请求量和成本，判断“用得多”还是“单次变贵”。</p>
             </div>
           </div>
           <div className="chart-container">
@@ -210,6 +225,8 @@ export function DashboardPage() {
                 </defs>
                 <CartesianGrid stroke="var(--border-subtle)" vertical={false} />
                 <XAxis dataKey="day" stroke="var(--text-tertiary)" fontSize={12} tickLine={false} axisLine={false} />
+                <YAxis yAxisId="cost" stroke="var(--text-tertiary)" fontSize={12} tickLine={false} axisLine={false} width={44} />
+                <YAxis yAxisId="requests" orientation="right" stroke="var(--text-tertiary)" fontSize={12} tickLine={false} axisLine={false} width={44} />
                 <Tooltip
                   contentStyle={{
                     background: "var(--bg-surface)",
@@ -219,16 +236,29 @@ export function DashboardPage() {
                     boxShadow: "var(--shadow-md)"
                   }}
                 />
+                <Legend verticalAlign="top" height={28} />
                 <Area
+                  yAxisId="cost"
                   type="monotone"
                   dataKey="cost"
+                  name="费用 USD"
                   stroke="var(--accent)"
                   fill="url(#costFill)"
+                  strokeWidth={2}
+                />
+                <Area
+                  yAxisId="requests"
+                  type="monotone"
+                  dataKey="requests"
+                  name="请求数"
+                  stroke="var(--info)"
+                  fill="transparent"
                   strokeWidth={2}
                 />
               </AreaChart>
             </ResponsiveContainer>
           </div>
+          <p className="chart-note">图表提供 tooltip、图例和双轴单位；成本按美元展示，请求按次数展示。</p>
         </article>
 
         {/* Alerts */}
@@ -261,6 +291,19 @@ export function DashboardPage() {
         </article>
       </section>
 
+      <section className="page-summary-grid">
+        {(data?.provider_health ?? []).map((provider, index) => (
+          <article key={`${provider.message}-${index}`} className="summary-card">
+            <div className="flex items-center gap-2">
+              <span className={`status-dot ${providerTone(provider.status)}`} />
+              <strong>Provider #{index + 1}</strong>
+              <span className={`pill pill-${providerTone(provider.status)}`}>{providerStatusText(provider.status)}</span>
+            </div>
+            <span>{provider.latency_ms ? `${provider.latency_ms}ms` : "暂无延迟"} · {provider.message || "未返回健康说明"}</span>
+          </article>
+        ))}
+      </section>
+
       {/* Mini Traffic Bar */}
       <section className="panel panel-compact">
         <div className="flex items-center justify-between" style={{ marginBottom: "var(--space-3)" }}>
@@ -279,6 +322,7 @@ export function DashboardPage() {
                 className="flex-col items-center gap-1"
                 style={{ cursor: "pointer" }}
                 title={`${dot.path}\n厂商: ${dot.provider}\n延迟: ${dot.latency}ms`}
+                aria-label={`${dot.path}，厂商 ${dot.provider}，延迟 ${dot.latency}ms`}
               >
                 <div
                   style={{
@@ -301,4 +345,19 @@ export function DashboardPage() {
       </section>
     </div>
   );
+}
+
+function providerTone(status: string): "success" | "warning" | "danger" | "neutral" {
+  if (status === "healthy") return "success";
+  if (status === "warning") return "warning";
+  if (status === "disabled" || status === "blocked") return "danger";
+  return "neutral";
+}
+
+function providerStatusText(status: string) {
+  if (status === "healthy") return "正常";
+  if (status === "warning") return "警告";
+  if (status === "disabled") return "停用";
+  if (status === "blocked") return "阻塞";
+  return status || "未知";
 }

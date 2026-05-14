@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from "react";
-import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis, Cell } from "recharts";
+import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis, Cell } from "recharts";
 import { Loader2, Zap } from "lucide-react";
 
 type BreakdownItem = { name: string; cost: number; requests: number; tokens: number };
@@ -110,6 +110,7 @@ export function AnalyticsPage() {
         <div className="section-header-main">
           <span className="eyebrow">数据洞察</span>
           <h2 className="section-title">用量分析</h2>
+          <p className="section-description">把请求、Token、费用和成功率转换成可解释的业务指标，方便研发排障和产品看趋势。</p>
         </div>
         <div className="section-actions">
           <div className="tabs">
@@ -173,9 +174,11 @@ export function AnalyticsPage() {
                   boxShadow: "var(--shadow-md)"
                 }}
               />
+              <Legend verticalAlign="top" height={28} />
               <Line
                 type="monotone"
                 dataKey={dimension}
+                name={dimension === "cost" ? "费用 USD" : "请求数"}
                 stroke="var(--accent)"
                 strokeWidth={2}
                 dot={{ r: 3, fill: "var(--accent)", strokeWidth: 0 }}
@@ -184,6 +187,7 @@ export function AnalyticsPage() {
             </LineChart>
           </ResponsiveContainer>
         </div>
+        <p className="chart-note">切换“费用/请求”可区分成本异常与流量增长；tooltip 显示精确数值。</p>
       </div>
 
       {/* Breakdown */}
@@ -203,8 +207,9 @@ export function AnalyticsPage() {
             </div>
           </div>
         </div>
-        <div className="chart-container">
-          <ResponsiveContainer width="100%" height="100%">
+        {activeBreakdown.length ? (
+          <div className="chart-container">
+            <ResponsiveContainer width="100%" height="100%">
             <BarChart
               data={activeBreakdown}
               layout="vertical"
@@ -231,14 +236,18 @@ export function AnalyticsPage() {
                 }}
                 formatter={(value: number) => [`$${value.toFixed(2)}`, "费用"]}
               />
-              <Bar dataKey="cost" radius={[0, 4, 4, 0]} barSize={20}>
+              <Legend verticalAlign="top" height={28} />
+              <Bar dataKey="cost" name="费用 USD" radius={[0, 4, 4, 0]} barSize={20}>
                 {activeBreakdown.map((_, i) => (
                   <Cell key={i} fill={breakdownColor} opacity={0.7 + (i % 3) * 0.15} />
                 ))}
               </Bar>
             </BarChart>
-          </ResponsiveContainer>
-        </div>
+            </ResponsiveContainer>
+          </div>
+        ) : (
+          <div className="chart-empty">暂无可拆分数据。发起真实请求后会显示 Provider、模型和密钥维度排行。</div>
+        )}
       </div>
     </div>
   );

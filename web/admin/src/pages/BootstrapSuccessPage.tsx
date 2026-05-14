@@ -14,7 +14,7 @@ export function BootstrapSuccessPage() {
         <SectionHeader
           eyebrow="初始化完成"
           title="TokenBridge 已进入正式管理模式"
-          description="基础运行边界已经确认，接下来可以配置厂商、密钥、路由和日志观测。"
+          description="基础运行边界已经确认。下一步优先配置 Provider、Local Key 和路由规则，再回到总览观察健康状态。"
           actions={
             <Link className="btn btn-primary" to="/dashboard" onClick={() => setInitialized(true)}>
               <ShieldCheck size={16} /> 进入总台
