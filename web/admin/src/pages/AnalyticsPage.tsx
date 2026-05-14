@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect } from "react";
 import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis, Cell } from "recharts";
 import { Loader2, Zap } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
 
 type BreakdownItem = { name: string; cost: number; requests: number; tokens: number };
 
@@ -20,12 +21,20 @@ type AnalyticsPayload = {
 };
 
 export function AnalyticsPage() {
-  const [range, setRange] = useState("7d");
-  const [dimension, setDimension] = useState<"cost" | "requests">("cost");
+  const [searchParams] = useSearchParams();
+  const rangeParam = searchParams.get("range");
+  const metricParam = searchParams.get("metric");
+  const [range, setRange] = useState(normalizeAnalyticsRange(rangeParam));
+  const [dimension, setDimension] = useState<"cost" | "requests">(normalizeAnalyticsMetric(metricParam));
   const [breakdownMode, setBreakdownMode] = useState<"provider" | "model" | "key">("provider");
   const [data, setData] = useState<AnalyticsPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setRange(normalizeAnalyticsRange(rangeParam));
+    setDimension(normalizeAnalyticsMetric(metricParam));
+  }, [rangeParam, metricParam]);
 
   useEffect(() => {
     setLoading(true);
@@ -251,6 +260,14 @@ export function AnalyticsPage() {
       </div>
     </div>
   );
+}
+
+function normalizeAnalyticsRange(value: string | null) {
+  return value === "30d" ? "30d" : "7d";
+}
+
+function normalizeAnalyticsMetric(value: string | null): "cost" | "requests" {
+  return value === "requests" ? "requests" : "cost";
 }
 
 function clsx(...classes: Array<string | false | undefined>) {

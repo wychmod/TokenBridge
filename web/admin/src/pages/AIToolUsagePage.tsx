@@ -28,6 +28,7 @@ import {
   Target,
   X
 } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
 import { api } from "../utils/api";
 
 type Currency = "USD" | "CNY";
@@ -75,10 +76,13 @@ type DashboardPayload = {
 const toolColors = ["#66c7b8", "#79afd9", "#d9ad63", "#df7c86", "#8abf72", "#b89ce8"];
 
 export function AIToolUsagePage() {
-  const [days, setDays] = useState(30);
+  const [searchParams] = useSearchParams();
+  const daysParam = searchParams.get("days");
+  const metricParam = searchParams.get("metric");
+  const [days, setDays] = useState(normalizeAIDays(daysParam));
   const [currency, setCurrency] = useState<Currency>("CNY");
   const [exchangeRate, setExchangeRate] = useState(7.2);
-  const [metric, setMetric] = useState<"cost" | "requests" | "tokens">("cost");
+  const [metric, setMetric] = useState<"cost" | "requests" | "tokens">(normalizeAIMetric(metricParam));
   const [data, setData] = useState<DashboardPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
@@ -104,6 +108,11 @@ export function AIToolUsagePage() {
   useEffect(() => {
     void load();
   }, [days]);
+
+  useEffect(() => {
+    setDays(normalizeAIDays(daysParam));
+    setMetric(normalizeAIMetric(metricParam));
+  }, [daysParam, metricParam]);
 
   const display = useMemo(() => {
     const rate = currency === "CNY" ? exchangeRate : 1;
@@ -477,4 +486,14 @@ function ChartTooltip({ active, payload, label, money, metric }: { active?: bool
       <span>{metric === "cost" ? money(value) : Number(value).toLocaleString()}</span>
     </div>
   );
+}
+
+function normalizeAIDays(value: string | null) {
+  const parsed = Number(value);
+  return parsed === 7 || parsed === 90 ? parsed : 30;
+}
+
+function normalizeAIMetric(value: string | null): "cost" | "requests" | "tokens" {
+  if (value === "requests" || value === "tokens") return value;
+  return "cost";
 }

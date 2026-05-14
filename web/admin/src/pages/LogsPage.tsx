@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Copy, Download, Search, ChevronDown, ChevronUp, Zap } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
+import clsx from "clsx";
 
 type LogItem = {
   id: string;
@@ -24,12 +26,15 @@ type LogStats = {
 };
 
 export function LogsPage() {
+  const [searchParams] = useSearchParams();
+  const statusParam = searchParams.get("status");
+  const fallbackParam = searchParams.get("only_fallback");
   const [query, setQuery] = useState("");
   const [traceQuery, setTraceQuery] = useState("");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
-  const [onlyFallback, setOnlyFallback] = useState(false);
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [onlyFallback, setOnlyFallback] = useState(fallbackParam === "true");
+  const [statusFilter, setStatusFilter] = useState(normalizeLogStatus(statusParam));
   const [providerFilter, setProviderFilter] = useState("");
   const [apiFormatFilter, setApiFormatFilter] = useState("");
   const [logs, setLogs] = useState<LogItem[]>([]);
@@ -39,6 +44,11 @@ export function LogsPage() {
   const [error, setError] = useState<string | null>(null);
   const [showFilters, setShowFilters] = useState(false);
   const [detailExpanded, setDetailExpanded] = useState(false);
+
+  useEffect(() => {
+    setOnlyFallback(fallbackParam === "true");
+    setStatusFilter(normalizeLogStatus(statusParam));
+  }, [fallbackParam, statusParam]);
 
   const params = useMemo(() => {
     const p = new URLSearchParams();
@@ -386,6 +396,7 @@ export function LogsPage() {
   );
 }
 
-function clsx(...classes: Array<string | false | undefined>) {
-  return classes.filter(Boolean).join(" ");
+function normalizeLogStatus(value: string | null) {
+  if (value === "failed" || value === "success") return value;
+  return "all";
 }

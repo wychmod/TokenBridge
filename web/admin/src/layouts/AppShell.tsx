@@ -48,7 +48,6 @@ import {
   onDesktopWindowShown,
   openDesktopAdminInBrowser,
   persistWindowState,
-  showDesktopWindow,
   toggleDesktopMaximise,
   type DesktopRuntimeSummary,
   type DesktopStatus,
@@ -303,11 +302,6 @@ export function AppShell({ children }: PropsWithChildren) {
             <Sparkles size={13} />
             <span>{deliveryPagesReady} 项交付页</span>
           </div>
-          {desktopStatus.desktopMode && (
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => showDesktopWindow()} title="恢复窗口">
-              显示窗口
-            </button>
-          )}
         </div>
       </aside>
 

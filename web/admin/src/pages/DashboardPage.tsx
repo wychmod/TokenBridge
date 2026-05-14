@@ -1,7 +1,7 @@
 import { Area, AreaChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, Loader2, Zap } from "lucide-react";
-import { isDesktopMode } from "../utils/desktop-bridge";
+import { AlertTriangle, ArrowUpRight, CheckCircle2, Zap } from "lucide-react";
+import { Link } from "react-router-dom";
 import { api } from "../utils/api";
 
 type DashboardPayload = {
@@ -22,6 +22,11 @@ type DashboardPayload = {
   provider_health: Array<{ status: string; latency_ms: number; message: string }>;
   recent_logs: Array<{ id: string; path: string; provider_id: string; latency_ms: number; status_label: string; status_code: number }>;
   log_stats: { total: number; failures: number; fallbacks: number; avg_latency_ms: number };
+  ai_tool_usage?: {
+    total_cost_usd: number;
+    total_requests: number;
+    total_tokens: number;
+  };
 };
 
 export function DashboardPage() {
@@ -46,42 +51,73 @@ export function DashboardPage() {
   const kpis = useMemo(() => {
     if (!data) return [];
     const healthyProviders = data.provider_health?.filter((provider) => provider.status === "healthy").length ?? 0;
+    const aiToolCost = data.ai_tool_usage?.total_cost_usd ?? 0;
+    const aiToolRequests = data.ai_tool_usage?.total_requests ?? 0;
+    const aiToolTokens = data.ai_tool_usage?.total_tokens ?? 0;
     return [
       {
         label: "总请求",
         value: data.overview.usage.total_requests.toLocaleString(),
         delta: "所有接入工具的网关调用",
-        healthy: data.overview.usage.success_rate >= 0.95
+        healthy: data.overview.usage.success_rate >= 0.95,
+        to: "/analytics?metric=requests&range=7d",
+        ariaLabel: "查看调用分析中的总请求趋势"
       },
       {
         label: "成功率",
         value: `${(data.overview.usage.success_rate * 100).toFixed(1)}%`,
         delta: data.overview.usage.success_rate >= 0.95 ? "当前链路稳定" : "建议查看失败日志",
-        healthy: data.overview.usage.success_rate >= 0.95
+        healthy: data.overview.usage.success_rate >= 0.95,
+        to: "/analytics?metric=requests&range=7d",
+        ariaLabel: "查看调用分析中的成功率和失败概览"
       },
       {
         label: "累计费用（7日）",
         value: `$${data.overview.usage.total_cost_usd.toFixed(2)}`,
         delta: `${(data.overview.usage.input_tokens + data.overview.usage.output_tokens).toLocaleString()} tokens`,
-        healthy: true
+        healthy: true,
+        to: "/analytics?metric=cost&range=7d",
+        ariaLabel: "查看调用分析中的费用趋势"
       },
       {
         label: "失败请求",
         value: String(data.log_stats.failures),
         delta: `备用切换 ${data.log_stats.fallbacks} 次`,
-        healthy: data.log_stats.failures === 0
+        healthy: data.log_stats.failures === 0,
+        to: "/logs?status=failed",
+        ariaLabel: "查看请求日志中的失败请求"
       },
       {
         label: "Fallback",
         value: String(data.log_stats.fallbacks),
         delta: data.log_stats.fallbacks > 0 ? "主链路曾切到备用线路" : "未触发备用切换",
-        healthy: data.log_stats.fallbacks === 0
+        healthy: data.log_stats.fallbacks === 0,
+        to: "/logs?only_fallback=true",
+        ariaLabel: "查看请求日志中的备用切换记录"
       },
       {
         label: "平均延迟",
         value: `${data.log_stats.avg_latency_ms}ms`,
         delta: `${healthyProviders}/${data.overview.providers} 家 Provider 健康`,
-        healthy: data.log_stats.avg_latency_ms < 1000
+        healthy: data.log_stats.avg_latency_ms < 1000,
+        to: "/providers",
+        ariaLabel: "查看 Provider 接入和连接健康"
+      },
+      {
+        label: "AI 工具成本",
+        value: `$${aiToolCost.toFixed(aiToolCost >= 10 ? 2 : 4)}`,
+        delta: "近 30 天本地 AI Coding",
+        healthy: true,
+        to: "/ai-tool-usage?metric=cost&days=30",
+        ariaLabel: "查看 AI 工具用量成本明细"
+      },
+      {
+        label: "AI 工具请求",
+        value: aiToolRequests.toLocaleString(),
+        delta: `近 30 天 · ${aiToolTokens.toLocaleString()} tokens`,
+        healthy: true,
+        to: "/ai-tool-usage?metric=requests&days=30",
+        ariaLabel: "查看 AI 工具用量请求趋势"
       }
     ];
   }, [data]);
@@ -142,7 +178,7 @@ export function DashboardPage() {
     return (
       <div className="flex-col gap-5">
         <section className="kpi-grid">
-          {Array.from({ length: 4 }).map((_, i) => (
+          {Array.from({ length: 8 }).map((_, i) => (
             <div key={i} className="kpi-card" style={{ minHeight: 100 }}>
               <div className="skeleton skeleton-text" style={{ width: "40%" }} />
               <div className="skeleton skeleton-title" style={{ width: "70%", marginTop: 8 }} />
@@ -186,13 +222,16 @@ export function DashboardPage() {
       <section className="kpi-grid">
         {kpis.length > 0 ? (
           kpis.map((kpi) => (
-            <article key={kpi.label} className="kpi-card">
-              <span className="kpi-label">{kpi.label}</span>
+            <Link key={kpi.label} to={kpi.to} className="kpi-card kpi-card-link" aria-label={kpi.ariaLabel} title={kpi.ariaLabel}>
+              <span className="kpi-card-head">
+                <span className="kpi-label">{kpi.label}</span>
+                <ArrowUpRight className="kpi-card-arrow" size={15} aria-hidden="true" />
+              </span>
               <span className="kpi-value" style={{ color: kpi.healthy ? "var(--text-primary)" : "var(--warning)" }}>
                 {kpi.value}
               </span>
               <span className="kpi-delta">{kpi.delta}</span>
-            </article>
+            </Link>
           ))
         ) : (
           <article className="kpi-card" style={{ gridColumn: "span 4" }}>
