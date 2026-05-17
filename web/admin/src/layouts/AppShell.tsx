@@ -228,7 +228,7 @@ export function AppShell({ children }: PropsWithChildren) {
   };
 
   return (
-    <div className="app-shell">
+    <div className={clsx("app-shell", desktopStatus.desktopMode && "has-titlebar")}>
       {/* Desktop Titlebar */}
       {desktopStatus.desktopMode ? (
         <header className="desktop-titlebar">
