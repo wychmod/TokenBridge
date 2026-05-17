@@ -113,6 +113,16 @@ type Dashboard struct {
 	Recent        []models.AICodingUsageRecord `json:"recent"`
 }
 
+type RealtimeSnapshot struct {
+	Today     Summary      `json:"today"`
+	Total     Summary      `json:"total"`
+	Trend     []TrendPoint `json:"trend"`
+	TopTool   *Breakdown   `json:"top_tool,omitempty"`
+	TopModel  *Breakdown   `json:"top_model,omitempty"`
+	UpdatedAt string       `json:"updated_at"`
+	LocalOnly bool         `json:"local_only"`
+}
+
 type parsedRecord struct {
 	Tool                string
 	SessionID           string
@@ -316,6 +326,44 @@ func (s *Service) Dashboard(ctx context.Context, days int) (Dashboard, error) {
 	return dashboard, nil
 }
 
+func (s *Service) RealtimeSnapshot(ctx context.Context) (RealtimeSnapshot, error) {
+	localNow := s.nowFunc()
+	location := localNow.Location()
+	startLocal := startOfDay(localNow.In(location))
+	endLocal := startLocal.AddDate(0, 0, 1)
+
+	today, err := s.aggregateSummary(ctx, &startLocal, &endLocal)
+	if err != nil {
+		return RealtimeSnapshot{}, err
+	}
+	total, err := s.aggregateSummary(ctx, nil, nil)
+	if err != nil {
+		return RealtimeSnapshot{}, err
+	}
+
+	dashboard, err := s.Dashboard(ctx, 7)
+	if err != nil {
+		return RealtimeSnapshot{}, err
+	}
+
+	result := RealtimeSnapshot{
+		Today:     today,
+		Total:     total,
+		Trend:     dashboard.Trend,
+		UpdatedAt: localNow.Format(time.RFC3339),
+		LocalOnly: true,
+	}
+	if len(dashboard.ToolBreakdown) > 0 {
+		tool := dashboard.ToolBreakdown[0]
+		result.TopTool = &tool
+	}
+	if len(dashboard.ModelRank) > 0 {
+		model := dashboard.ModelRank[0]
+		result.TopModel = &model
+	}
+	return result, nil
+}
+
 func (s *Service) Export(ctx context.Context, format string, days int, exchangeRate float64) ([]byte, string, string, error) {
 	dashboard, err := s.Dashboard(ctx, days)
 	if err != nil {
@@ -338,6 +386,31 @@ func (s *Service) Export(ctx context.Context, format string, days int, exchangeR
 		body, err := exportCSV(dashboard, exchangeRate)
 		return body, "text/csv; charset=utf-8", "ai-coding-usage-" + stamp + ".csv", err
 	}
+}
+
+func (s *Service) aggregateSummary(ctx context.Context, startLocal *time.Time, endLocal *time.Time) (Summary, error) {
+	query := s.db.WithContext(ctx).Model(&models.AICodingUsageRecord{})
+	if startLocal != nil && endLocal != nil {
+		query = query.Where("occurred_at >= ? AND occurred_at < ?", startLocal.UTC(), endLocal.UTC())
+	}
+
+	var summary Summary
+	err := query.Select(`
+		COALESCE(SUM(total_cost_usd), 0) AS total_cost_usd,
+		COUNT(*) AS total_requests,
+		COALESCE(SUM(total_tokens), 0) AS total_tokens,
+		COALESCE(SUM(input_tokens), 0) AS input_tokens,
+		COALESCE(SUM(output_tokens), 0) AS output_tokens,
+		COALESCE(SUM(cache_creation_tokens), 0) AS cache_creation,
+		COALESCE(SUM(cache_read_tokens), 0) AS cache_read,
+		COALESCE(SUM(CASE WHEN pricing_matched = false THEN 1 ELSE 0 END), 0) AS pricing_fallbacks
+	`).Scan(&summary).Error
+	if err != nil {
+		return Summary{}, err
+	}
+	summary.LocalOnly = true
+	finalizeSummary(&summary)
+	return summary, nil
 }
 
 func (s *Service) scanFile(ctx context.Context, candidate logCandidate) (bool, int64, int64, error) {

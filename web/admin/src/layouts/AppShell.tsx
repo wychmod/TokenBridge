@@ -48,6 +48,7 @@ import {
   onDesktopWindowShown,
   openDesktopAdminInBrowser,
   persistWindowState,
+  toggleDesktopAIStatsWidget,
   toggleDesktopMaximise,
   type DesktopRuntimeSummary,
   type DesktopStatus,
@@ -245,6 +246,10 @@ export function AppShell({ children }: PropsWithChildren) {
             </button>
             <button type="button" className="btn btn-ghost btn-sm" onClick={() => hideDesktopToTray()}>
               <span style={{ fontSize: "0.75rem" }}>隐藏到托盘</span>
+            </button>
+            <button type="button" className="btn btn-ghost btn-sm desktop-ai-stats-button" onClick={() => toggleDesktopAIStatsWidget()}>
+              <Bot size={13} />
+              <span style={{ fontSize: "0.75rem" }}>实时AI统计</span>
             </button>
             <button type="button" className="btn btn-ghost btn-icon" onClick={() => minimiseDesktopWindow()} aria-label="最小化窗口">
               <Minus size={14} />

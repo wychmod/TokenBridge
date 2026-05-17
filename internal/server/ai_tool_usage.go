@@ -16,6 +16,15 @@ func (r *Router) handleAIToolUsage(w http.ResponseWriter, req *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]any{"data": data})
 }
 
+func (r *Router) handleAIToolUsageRealtime(w http.ResponseWriter, req *http.Request) {
+	data, err := r.deps.AIToolUsage.RealtimeSnapshot(req.Context())
+	if err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]any{"data": data})
+}
+
 func (r *Router) handleAIToolUsageScan(w http.ResponseWriter, req *http.Request) {
 	result, err := r.deps.AIToolUsage.Scan(req.Context())
 	if err != nil {

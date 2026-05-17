@@ -7,9 +7,11 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
@@ -25,6 +27,8 @@ type DesktopApp struct {
 	Application *app.Application
 	Server      *http.Server
 	State       DesktopWindowState
+	aiStatsMu   sync.Mutex
+	aiStatsCmd  *exec.Cmd
 	quitting    bool
 }
 
@@ -87,6 +91,11 @@ type DesktopWindowState struct {
 	HiddenToTray bool   `json:"hiddenToTray"`
 }
 
+type AIStatsWidgetState struct {
+	Open bool `json:"open"`
+	PID  int  `json:"pid,omitempty"`
+}
+
 func defaultDesktopWindowState() DesktopWindowState {
 	return DesktopWindowState{Width: 1360, Height: 860, X: 120, Y: 80, LastRoute: "/dashboard"}
 }
@@ -115,6 +124,7 @@ func (d *DesktopApp) Startup(ctx context.Context) {
 }
 
 func (d *DesktopApp) Shutdown(ctx context.Context) {
+	d.HideAIStatsWidget()
 	d.persistWindowState()
 	if d.Server != nil {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -266,6 +276,53 @@ func (d *DesktopApp) OpenAdminInBrowser() {
 		wailsruntime.BrowserOpenURL(d.ctx, status.AdminURL)
 	}
 }
+func (d *DesktopApp) GetAIStatsWidgetState() AIStatsWidgetState {
+	d.aiStatsMu.Lock()
+	defer d.aiStatsMu.Unlock()
+	return d.aiStatsWidgetStateLocked()
+}
+func (d *DesktopApp) ToggleAIStatsWidget() AIStatsWidgetState {
+	if d.GetAIStatsWidgetState().Open {
+		return d.HideAIStatsWidget()
+	}
+	return d.ShowAIStatsWidget()
+}
+func (d *DesktopApp) ShowAIStatsWidget() AIStatsWidgetState {
+	d.aiStatsMu.Lock()
+	defer d.aiStatsMu.Unlock()
+	if state := d.aiStatsWidgetStateLocked(); state.Open {
+		return state
+	}
+	status := d.GetDesktopStatus()
+	if status.AdminURL == "" {
+		d.emitAIStatsWidgetStateLocked()
+		return AIStatsWidgetState{}
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		d.emitAIStatsWidgetStateLocked()
+		return AIStatsWidgetState{}
+	}
+	cmd := exec.Command(executable, "--ai-stats-widget", "--admin-url", status.AdminURL)
+	if err := cmd.Start(); err != nil {
+		d.emitAIStatsWidgetStateLocked()
+		return AIStatsWidgetState{}
+	}
+	d.aiStatsCmd = cmd
+	go d.waitForAIStatsWidget(cmd)
+	d.emitAIStatsWidgetStateLocked()
+	return d.aiStatsWidgetStateLocked()
+}
+func (d *DesktopApp) HideAIStatsWidget() AIStatsWidgetState {
+	d.aiStatsMu.Lock()
+	defer d.aiStatsMu.Unlock()
+	if d.aiStatsCmd != nil && d.aiStatsCmd.Process != nil && d.aiStatsCmd.ProcessState == nil {
+		_ = d.aiStatsCmd.Process.Kill()
+	}
+	d.aiStatsCmd = nil
+	d.emitAIStatsWidgetStateLocked()
+	return AIStatsWidgetState{}
+}
 func (d *DesktopApp) SendNativeNotice(title string, message string) {
 	if d.ctx == nil {
 		return
@@ -278,6 +335,34 @@ func (d *DesktopApp) SendNativeNotice(title string, message string) {
 	}
 	wailsruntime.EventsEmit(d.ctx, "desktop:notice", map[string]string{"title": title, "message": message})
 	_, _ = wailsruntime.MessageDialog(d.ctx, wailsruntime.MessageDialogOptions{Type: wailsruntime.InfoDialog, Title: title, Message: message})
+}
+
+func (d *DesktopApp) waitForAIStatsWidget(cmd *exec.Cmd) {
+	_ = cmd.Wait()
+	d.aiStatsMu.Lock()
+	defer d.aiStatsMu.Unlock()
+	if d.aiStatsCmd == cmd {
+		d.aiStatsCmd = nil
+		d.emitAIStatsWidgetStateLocked()
+	}
+}
+
+func (d *DesktopApp) aiStatsWidgetStateLocked() AIStatsWidgetState {
+	if d.aiStatsCmd == nil || d.aiStatsCmd.Process == nil {
+		return AIStatsWidgetState{}
+	}
+	if d.aiStatsCmd.ProcessState != nil && d.aiStatsCmd.ProcessState.Exited() {
+		d.aiStatsCmd = nil
+		return AIStatsWidgetState{}
+	}
+	return AIStatsWidgetState{Open: true, PID: d.aiStatsCmd.Process.Pid}
+}
+
+func (d *DesktopApp) emitAIStatsWidgetStateLocked() {
+	if d.ctx == nil {
+		return
+	}
+	wailsruntime.EventsEmit(d.ctx, "desktop:ai-stats-widget", d.aiStatsWidgetStateLocked())
 }
 
 func (d *DesktopApp) checkProviderConfig() (bool, string) {

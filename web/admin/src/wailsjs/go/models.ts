@@ -1,5 +1,19 @@
 export namespace main {
 	
+	export class AIStatsWidgetState {
+	    open: boolean;
+	    pid?: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new AIStatsWidgetState(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.open = source["open"];
+	        this.pid = source["pid"];
+	    }
+	}
 	export class DesktopCheckItem {
 	    key: string;
 	    title: string;

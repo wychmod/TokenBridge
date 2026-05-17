@@ -321,6 +321,77 @@ func TestDashboardUsesLocalTimeWindowAndBuckets(t *testing.T) {
 	}
 }
 
+func TestRealtimeSnapshotSeparatesTodayAndTotal(t *testing.T) {
+	db := openTestDB(t)
+	svc := NewService(db, pricing.NewService(db, zerolog.Nop()), zerolog.Nop())
+	location := time.FixedZone("CST", 8*60*60)
+	now := time.Date(2026, 5, 12, 10, 0, 0, 0, location)
+	svc.nowFunc = func() time.Time { return now }
+
+	rows := []models.AICodingUsageRecord{
+		{
+			ID:              "today",
+			Tool:            "Codex",
+			ProjectName:     "tokenbridge",
+			Model:           "gpt-5",
+			InputTokens:     1000,
+			CacheReadTokens: 250,
+			TotalTokens:     1200,
+			TotalCostUSD:    0.25,
+			PricingMatched:  true,
+			OccurredAt:      time.Date(2026, 5, 12, 1, 0, 0, 0, time.UTC),
+			CreatedAt:       now,
+		},
+		{
+			ID:             "yesterday",
+			Tool:           "Claude Code",
+			ProjectName:    "tokenbridge",
+			Model:          "claude",
+			InputTokens:    800,
+			TotalTokens:    900,
+			TotalCostUSD:   0.15,
+			PricingMatched: true,
+			OccurredAt:     time.Date(2026, 5, 11, 1, 0, 0, 0, time.UTC),
+			CreatedAt:      now,
+		},
+		{
+			ID:             "old",
+			Tool:           "Codex",
+			ProjectName:    "archive",
+			Model:          "gpt-4",
+			InputTokens:    200,
+			TotalTokens:    250,
+			TotalCostUSD:   0.20,
+			PricingMatched: true,
+			OccurredAt:     time.Date(2026, 4, 20, 1, 0, 0, 0, time.UTC),
+			CreatedAt:      now,
+		},
+	}
+	if err := db.Create(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	snapshot, err := svc.RealtimeSnapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.Today.TotalRequests != 1 || math.Abs(snapshot.Today.TotalCostUSD-0.25) > 0.000001 {
+		t.Fatalf("expected one today record costing 0.25, got %+v", snapshot.Today)
+	}
+	if snapshot.Total.TotalRequests != 3 || math.Abs(snapshot.Total.TotalCostUSD-0.60) > 0.000001 {
+		t.Fatalf("expected all records in total aggregate, got %+v", snapshot.Total)
+	}
+	if snapshot.Today.CacheHitRate != 0.25 {
+		t.Fatalf("expected today's cache hit rate to use cache/read input ratio, got %f", snapshot.Today.CacheHitRate)
+	}
+	if len(snapshot.Trend) != 7 {
+		t.Fatalf("expected seven-day trend for widget context, got %d", len(snapshot.Trend))
+	}
+	if snapshot.UpdatedAt == "" || !snapshot.LocalOnly {
+		t.Fatalf("expected updated_at and local_only metadata, got %+v", snapshot)
+	}
+}
+
 func TestProjectSpendClearsToolWhenMixed(t *testing.T) {
 	db := openTestDB(t)
 	svc := NewService(db, pricing.NewService(db, zerolog.Nop()), zerolog.Nop())

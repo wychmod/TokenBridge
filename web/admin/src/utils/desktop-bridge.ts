@@ -82,6 +82,16 @@ export type DesktopNotice = {
   message: string;
 };
 
+type DesktopRuntimeBridge = Window & {
+  go?: {
+    main?: {
+      DesktopApp?: {
+        ToggleAIStatsWidget?: () => Promise<unknown>;
+      };
+    };
+  };
+};
+
 const emptyWindowState: DesktopWindowState = {
   width: 1360,
   height: 860,
@@ -154,6 +164,10 @@ export function toggleDesktopMaximise() { if (!isDesktopMode) return; void Toggl
 export function closeDesktopWindow() { if (!isDesktopMode) return; void CloseWindow(); }
 export function hideDesktopToTray() { if (!isDesktopMode) return; void HideToTray(); }
 export function openDesktopAdminInBrowser() { if (!isDesktopMode) { window.open("/admin/dashboard", "_blank"); return; } void OpenAdminInBrowser(); }
+export function toggleDesktopAIStatsWidget() {
+  if (!isDesktopMode) return;
+  void (window as DesktopRuntimeBridge).go?.main?.DesktopApp?.ToggleAIStatsWidget?.();
+}
 export function sendDesktopNotice(title: string, message: string) { if (!isDesktopMode) return; void SendNativeNotice(title, message); }
 
 function subscribe<T>(eventName: string, handler: (payload: T) => void) {

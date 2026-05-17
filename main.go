@@ -109,6 +109,13 @@ func runDesktopTray(app *DesktopApp) {
 }
 
 func main() {
+	if isWidget, adminURL := parseAIStatsWidgetMode(); isWidget {
+		if err := runAIStatsWidget(adminURL); err != nil {
+			panic(err)
+		}
+		return
+	}
+
 	desktopApp := NewDesktopApp()
 	proxy := newSPAProxy()
 	runDesktopTray(desktopApp)

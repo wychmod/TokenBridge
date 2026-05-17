@@ -6,6 +6,10 @@ export function CloseWindow() {
   return window['go']['main']['DesktopApp']['CloseWindow']();
 }
 
+export function GetAIStatsWidgetState() {
+  return window['go']['main']['DesktopApp']['GetAIStatsWidgetState']();
+}
+
 export function GetConfigSummary() {
   return window['go']['main']['DesktopApp']['GetConfigSummary']();
 }
@@ -24,6 +28,10 @@ export function GetVersion() {
 
 export function GetWindowState() {
   return window['go']['main']['DesktopApp']['GetWindowState']();
+}
+
+export function HideAIStatsWidget() {
+  return window['go']['main']['DesktopApp']['HideAIStatsWidget']();
 }
 
 export function HideToTray() {
@@ -58,6 +66,10 @@ export function SendNativeNotice(arg1, arg2) {
   return window['go']['main']['DesktopApp']['SendNativeNotice'](arg1, arg2);
 }
 
+export function ShowAIStatsWidget() {
+  return window['go']['main']['DesktopApp']['ShowAIStatsWidget']();
+}
+
 export function ShowMainWindow() {
   return window['go']['main']['DesktopApp']['ShowMainWindow']();
 }
@@ -68,6 +80,10 @@ export function Shutdown(arg1) {
 
 export function Startup(arg1) {
   return window['go']['main']['DesktopApp']['Startup'](arg1);
+}
+
+export function ToggleAIStatsWidget() {
+  return window['go']['main']['DesktopApp']['ToggleAIStatsWidget']();
 }
 
 export function ToggleMaximiseWindow() {

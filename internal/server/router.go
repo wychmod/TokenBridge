@@ -79,6 +79,7 @@ func (r *Router) mount() {
 		adminRouter.Get("/logs", r.handleAdminLogs)
 		adminRouter.Get("/overview", r.handleAdminOverview)
 		adminRouter.Get("/ai-tool-usage", r.handleAIToolUsage)
+		adminRouter.Get("/ai-tool-usage/realtime", r.handleAIToolUsageRealtime)
 		adminRouter.Post("/ai-tool-usage/scan", r.handleAIToolUsageScan)
 		adminRouter.Get("/ai-tool-usage/export", r.handleAIToolUsageExport)
 

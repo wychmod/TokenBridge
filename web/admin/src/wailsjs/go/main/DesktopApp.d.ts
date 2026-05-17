@@ -5,6 +5,8 @@ import {context} from '../models';
 
 export function CloseWindow():Promise<void>;
 
+export function GetAIStatsWidgetState():Promise<main.AIStatsWidgetState>;
+
 export function GetConfigSummary():Promise<main.DesktopConfigSummary>;
 
 export function GetDesktopStatus():Promise<main.DesktopStatus>;
@@ -14,6 +16,8 @@ export function GetRuntimeSummary():Promise<main.DesktopRuntimeSummary>;
 export function GetVersion():Promise<string>;
 
 export function GetWindowState():Promise<main.DesktopWindowState>;
+
+export function HideAIStatsWidget():Promise<main.AIStatsWidgetState>;
 
 export function HideToTray():Promise<void>;
 
@@ -31,10 +35,14 @@ export function SaveWindowState(arg1:main.DesktopWindowState):Promise<main.Deskt
 
 export function SendNativeNotice(arg1:string,arg2:string):Promise<void>;
 
+export function ShowAIStatsWidget():Promise<main.AIStatsWidgetState>;
+
 export function ShowMainWindow():Promise<void>;
 
 export function Shutdown(arg1:context.Context):Promise<void>;
 
 export function Startup(arg1:context.Context):Promise<void>;
+
+export function ToggleAIStatsWidget():Promise<main.AIStatsWidgetState>;
 
 export function ToggleMaximiseWindow():Promise<void>;

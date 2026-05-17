@@ -507,6 +507,17 @@ a { text-decoration: none; color: inherit; }
   min-width: 32px;
 }
 
+.desktop-ai-stats-button {
+  border-color: color-mix(in srgb, var(--accent) 22%, transparent);
+  background: color-mix(in srgb, var(--accent-dim) 42%, transparent);
+  color: var(--text-primary);
+}
+
+.desktop-ai-stats-button:hover {
+  border-color: color-mix(in srgb, var(--accent) 38%, transparent);
+  background: color-mix(in srgb, var(--accent-dim) 72%, var(--bg-elevated));
+}
+
 /* ------------------------------------------------------------------
    Buttons — no lift, just color shift
    ------------------------------------------------------------------ */
@@ -1715,17 +1726,6 @@ textarea:focus-visible {
   to { opacity: 1; transform: translateX(0); }
 }
 
-@keyframes widgetPop {
-  from { opacity: 0; transform: translate3d(8px, 8px, 0) scale(0.96); }
-  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
-}
-
-@keyframes widgetNudge {
-  0% { transform: translate3d(0, 0, 0) scale(0.96); }
-  55% { transform: translate3d(0, -3px, 0) scale(1.04); }
-  100% { transform: translate3d(0, 0, 0) scale(1); }
-}
-
 @keyframes noticeTimer {
   from { transform: scaleX(1); }
   to { transform: scaleX(0); }
@@ -2495,110 +2495,6 @@ textarea:focus-visible {
   color: var(--accent);
 }
 
-.ai-floating-widget {
-  position: fixed;
-  right: 24px;
-  bottom: 24px;
-  z-index: 35;
-  width: 230px;
-  padding: var(--space-3);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--bg-surface) 92%, transparent);
-  backdrop-filter: blur(14px);
-  box-shadow: var(--shadow-md);
-  transform-origin: right bottom;
-  animation: widgetPop var(--motion-slow) var(--motion-ease);
-  transition:
-    opacity var(--motion-base) ease,
-    transform var(--motion-base) var(--motion-ease);
-}
-
-.ai-floating-widget.wide {
-  width: 320px;
-}
-
-.ai-floating-widget strong {
-  display: block;
-  margin-top: var(--space-2);
-  font-family: var(--font-mono);
-  font-size: 1.35rem;
-}
-
-.ai-floating-widget span {
-  color: var(--text-secondary);
-  font-size: 0.78rem;
-}
-
-.ai-floating-widget label {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin-top: var(--space-3);
-  color: var(--text-tertiary);
-}
-
-.ai-floating-widget input[type="range"] {
-  width: 100%;
-}
-
-.ai-floating-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-}
-
-.ai-floating-head > span,
-.ai-floating-head div {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.ai-floating-head button,
-.ai-widget-toggle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 44px;
-  width: 44px;
-  height: 44px;
-  border-radius: var(--radius-sm);
-  color: var(--text-secondary);
-  background: transparent;
-  transform: translateZ(0);
-  transition:
-    background var(--motion-fast) ease,
-    color var(--motion-fast) ease,
-    box-shadow var(--motion-base) ease,
-    transform var(--motion-base) var(--motion-ease);
-}
-
-.ai-floating-head button:hover,
-.ai-widget-toggle:hover {
-  background: var(--bg-elevated);
-  color: var(--text-primary);
-  transform: translate3d(0, -2px, 0);
-}
-
-.ai-widget-toggle {
-  position: fixed;
-  right: 24px;
-  bottom: 24px;
-  z-index: 35;
-  background: var(--accent);
-  color: var(--accent-text);
-  box-shadow: var(--shadow-md);
-  animation: widgetNudge 700ms var(--motion-ease) 1;
-}
-
-.ai-widget-toggle:hover {
-  background: color-mix(in srgb, var(--accent) 86%, white);
-  color: var(--accent-text);
-  box-shadow: 0 10px 24px var(--accent-glow);
-}
-
 .spin {
   animation: spin 900ms linear infinite;
 }
@@ -2657,9 +2553,7 @@ textarea:focus-visible {
   .ai-rank-item:hover,
   .ai-rank-item:hover .ai-dot,
   .ai-rank-row:hover .ai-dot,
-  .ai-heatmap-cell:hover,
-  .ai-floating-head button:hover,
-  .ai-widget-toggle:hover {
+  .ai-heatmap-cell:hover {
     transform: none;
   }
 
@@ -2667,8 +2561,7 @@ textarea:focus-visible {
     display: none;
   }
 
-  .status-indicator.healthy,
-  .ai-widget-toggle {
+  .status-indicator.healthy {
     animation: none;
   }
 }
@@ -2810,15 +2703,6 @@ textarea:focus-visible {
   }
   .ai-heatmap {
     grid-template-columns: 44px repeat(24, 22px);
-  }
-  .ai-floating-widget {
-    right: 12px;
-    bottom: 84px;
-    width: min(300px, calc(100vw - 24px));
-  }
-  .ai-widget-toggle {
-    right: 12px;
-    bottom: 84px;
   }
   .detail-grid {
     grid-template-columns: 1fr;

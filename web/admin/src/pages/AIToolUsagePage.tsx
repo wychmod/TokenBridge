@@ -16,23 +16,17 @@ import {
 } from "recharts";
 import {
   Bot,
-  Coins,
   Download,
   FileJson,
   FileSpreadsheet,
   Loader2,
-  Maximize2,
-  Minimize2,
   RefreshCw,
-  SlidersHorizontal,
-  Target,
-  X
+  Target
 } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 import { api } from "../utils/api";
 
 type Currency = "USD" | "CNY";
-type WidgetSize = "compact" | "wide";
 
 type Summary = {
   total_cost_usd: number;
@@ -87,9 +81,6 @@ export function AIToolUsagePage() {
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [widgetOpen, setWidgetOpen] = useState(false);
-  const [widgetOpacity, setWidgetOpacity] = useState(92);
-  const [widgetSize, setWidgetSize] = useState<WidgetSize>("compact");
 
   const load = async () => {
     setLoading(true);
@@ -450,29 +441,6 @@ export function AIToolUsagePage() {
         </div>
       </section>
 
-      {widgetOpen ? (
-        <aside className={`ai-floating-widget ${widgetSize}`} style={{ opacity: widgetOpacity / 100 }}>
-          <div className="ai-floating-head">
-            <span><Bot size={14} /> AI Spend</span>
-            <div>
-              <button type="button" onClick={() => setWidgetSize(widgetSize === "compact" ? "wide" : "compact")} aria-label="调整悬浮窗大小">
-                {widgetSize === "compact" ? <Maximize2 size={13} /> : <Minimize2 size={13} />}
-              </button>
-              <button type="button" onClick={() => setWidgetOpen(false)} aria-label="关闭悬浮窗"><X size={13} /></button>
-            </div>
-          </div>
-          <strong>{display.money(summary?.total_cost_usd ?? 0)}</strong>
-          <span>{(summary?.total_requests ?? 0).toLocaleString()} requests · {((summary?.cache_hit_rate ?? 0) * 100).toFixed(1)}% cache</span>
-          <label>
-            <SlidersHorizontal size={12} />
-            <input type="range" min={55} max={100} value={widgetOpacity} onChange={(event) => setWidgetOpacity(Number(event.target.value))} />
-          </label>
-        </aside>
-      ) : (
-        <button type="button" className="ai-widget-toggle" onClick={() => setWidgetOpen(true)} aria-label="打开 AI 成本悬浮窗">
-          <Coins size={16} />
-        </button>
-      )}
     </div>
   );
 }
