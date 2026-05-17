@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/wailsapp/wails/v2"
@@ -21,9 +22,18 @@ import (
 )
 
 type AIStatsWidget struct {
-	ctx      context.Context
-	adminURL string
-	client   *http.Client
+	ctx       context.Context
+	adminURL  string
+	client    *http.Client
+	overlayMu sync.Mutex
+	overlay   *aiStatsNativeOverlay
+}
+
+type WidgetHitRect struct {
+	Left   int `json:"left"`
+	Top    int `json:"top"`
+	Right  int `json:"right"`
+	Bottom int `json:"bottom"`
 }
 
 func parseAIStatsWidgetMode() (bool, string) {
@@ -57,12 +67,12 @@ func runAIStatsWidget(adminURL string) error {
 
 	return wails.Run(&options.App{
 		Title:            "TokenBridge AI Stats",
-		Width:            380,
-		Height:           430,
-		MinWidth:         320,
-		MinHeight:        360,
+		Width:            340,
+		Height:           280,
+		MinWidth:         300,
+		MinHeight:        220,
 		Frameless:        true,
-		AlwaysOnTop:      true,
+		AlwaysOnTop:      false,
 		DisableResize:    false,
 		BackgroundColour: &options.RGBA{R: 0, G: 0, B: 0, A: 0},
 		AssetServer: &assetserver.Options{
@@ -70,9 +80,9 @@ func runAIStatsWidget(adminURL string) error {
 		},
 		Windows: &windows.Options{
 			WebviewIsTransparent:              true,
-			WindowIsTranslucent:               true,
+			WindowIsTranslucent:               false,
 			DisableWindowIcon:                 true,
-			BackdropType:                      windows.Mica,
+			BackdropType:                      windows.None,
 			DisablePinchZoom:                  true,
 			EnableSwipeGestures:               false,
 			Theme:                             windows.SystemDefault,
@@ -91,7 +101,7 @@ func runAIStatsWidget(adminURL string) error {
 
 func (w *AIStatsWidget) Startup(ctx context.Context) {
 	w.ctx = ctx
-	wailsruntime.WindowSetAlwaysOnTop(ctx, true)
+	wailsruntime.WindowSetAlwaysOnTop(ctx, false)
 	wailsruntime.WindowSetBackgroundColour(ctx, 0, 0, 0, 0)
 }
 
@@ -129,7 +139,83 @@ func (w *AIStatsWidget) SetAlwaysOnTop(enabled bool) {
 	wailsruntime.WindowSetAlwaysOnTop(w.ctx, enabled)
 }
 
+func (w *AIStatsWidget) SetTransparentHitMode(enabled bool, rects []WidgetHitRect) {
+	if w.ctx == nil {
+		return
+	}
+	_ = applyAIStatsTransparentHitMode(enabled, rects)
+}
+
+func (w *AIStatsWidget) SupportsNativeOverlay() bool {
+	return aiStatsNativeOverlaySupported()
+}
+
+func (w *AIStatsWidget) ShowNativeOverlay() bool {
+	if w.ctx == nil {
+		return false
+	}
+	snapshot, err := w.GetSnapshot()
+	if err != nil {
+		snapshot = aitoolusage.RealtimeSnapshot{}
+	}
+	x, y := wailsruntime.WindowGetPosition(w.ctx)
+
+	w.overlayMu.Lock()
+	if w.overlay == nil {
+		w.overlay = newAIStatsNativeOverlay(
+			func() { go w.HideNativeOverlay() },
+			func() { go w.RefreshNativeOverlay() },
+			func() { go w.Close() },
+		)
+	}
+	overlay := w.overlay
+	w.overlayMu.Unlock()
+
+	if !overlay.Show(snapshot, x, y) {
+		return false
+	}
+	wailsruntime.WindowSetAlwaysOnTop(w.ctx, false)
+	wailsruntime.WindowHide(w.ctx)
+	return true
+}
+
+func (w *AIStatsWidget) HideNativeOverlay() bool {
+	w.overlayMu.Lock()
+	overlay := w.overlay
+	w.overlayMu.Unlock()
+	if overlay != nil {
+		overlay.Close()
+	}
+	if w.ctx != nil {
+		wailsruntime.WindowSetAlwaysOnTop(w.ctx, false)
+		wailsruntime.WindowShow(w.ctx)
+	}
+	return true
+}
+
+func (w *AIStatsWidget) RefreshNativeOverlay() bool {
+	w.overlayMu.Lock()
+	overlay := w.overlay
+	w.overlayMu.Unlock()
+	if overlay == nil {
+		return false
+	}
+	snapshot, err := w.GetSnapshot()
+	if err != nil {
+		return false
+	}
+	overlay.UpdateSnapshot(snapshot)
+	return true
+}
+
 func (w *AIStatsWidget) Close() {
+	_ = applyAIStatsTransparentHitMode(false, nil)
+	w.overlayMu.Lock()
+	overlay := w.overlay
+	w.overlayMu.Unlock()
+	if overlay != nil {
+		overlay.Close()
+	}
 	if w.ctx == nil {
 		os.Exit(0)
 		return
@@ -151,35 +237,18 @@ const aiStatsWidgetHTML = `<!doctype html>
   <style>
     :root {
       color-scheme: dark;
-      --alpha: 0.88;
-      --panel: rgba(13, 17, 23, var(--alpha));
-      --wash-accent: rgba(102, 199, 184, 0.15);
-      --wash-info: rgba(121, 175, 217, 0.11);
-      --panel-soft: rgba(255, 255, 255, 0.06);
-      --line: rgba(218, 232, 245, 0.14);
-      --line-strong: rgba(102, 199, 184, 0.36);
-      --hero-bg: rgba(4, 9, 13, 0.32);
-      --tile-bg: rgba(255, 255, 255, 0.045);
-      --trend-bg: rgba(255, 255, 255, 0.04);
-      --status-bg: rgba(255, 255, 255, 0.055);
-      --hover-bg: rgba(255, 255, 255, 0.08);
-      --pulse-bg: rgba(102, 199, 184, 0.12);
-      --pulse-line: rgba(102, 199, 184, 0.16);
-      --bar-fade: rgba(102, 199, 184, 0.18);
-      --shadow: rgba(0, 0, 0, 0.34);
-      --shadow-drag: rgba(0, 0, 0, 0.28);
-      --edge-light: rgba(255, 255, 255, 0.08);
-      --edge-light-soft: rgba(255, 255, 255, 0.06);
-      --dot-ring: rgba(102, 199, 184, 0.12);
-      --info-ring: rgba(121, 175, 217, 0.12);
-      --error-ring: rgba(255, 139, 150, 0.12);
-      --text: rgba(248, 250, 252, 0.96);
-      --muted: rgba(196, 207, 218, 0.72);
-      --faint: rgba(156, 170, 184, 0.58);
+      --text: rgba(248, 250, 252, 0.98);
+      --muted: rgba(202, 213, 226, 0.78);
+      --faint: rgba(161, 176, 190, 0.62);
       --accent: #66c7b8;
-      --info: #79afd9;
-      --warning: #d9ad63;
-      font-family: Outfit, "Segoe UI", system-ui, sans-serif;
+      --accent-strong: #9ff4e8;
+      --info: #8bc7ff;
+      --line: rgba(218, 232, 245, 0.14);
+      --line-strong: rgba(102, 199, 184, 0.34);
+      --panel: rgba(12, 16, 22, 0.88);
+      --panel-soft: rgba(255, 255, 255, 0.052);
+      --panel-strong: rgba(3, 8, 14, 0.44);
+      font-family: "Segoe UI", system-ui, sans-serif;
     }
     * { box-sizing: border-box; }
     html, body {
@@ -193,57 +262,48 @@ const aiStatsWidgetHTML = `<!doctype html>
       user-select: none;
     }
     body {
-      padding: 8px;
-    }
-    button, input { font: inherit; }
-    button {
-      border: 0;
-      color: inherit;
-      cursor: pointer;
+      padding: 0;
       background: transparent;
     }
+    button { border: 0; color: inherit; cursor: pointer; background: transparent; font: inherit; }
     .widget {
       width: 100%;
       height: 100%;
       display: grid;
-      grid-template-rows: auto auto 1fr auto;
-      gap: 12px;
-      padding: 14px;
+      grid-template-rows: 32px auto minmax(106px, 1fr);
+      gap: 7px;
+      padding: 10px;
       border: 1px solid var(--line);
-      border-radius: 18px;
+      border-radius: 16px;
       background:
-        linear-gradient(145deg, var(--wash-accent), transparent 34%),
-        linear-gradient(315deg, var(--wash-info), transparent 42%),
+        linear-gradient(145deg, rgba(102, 199, 184, 0.14), transparent 34%),
+        linear-gradient(315deg, rgba(139, 199, 255, 0.10), transparent 44%),
         var(--panel);
-      box-shadow: 0 18px 42px var(--shadow), inset 0 1px 0 var(--edge-light);
-      backdrop-filter: blur(14px) saturate(1.18);
-      contain: paint;
+      box-shadow: 0 18px 42px rgba(0, 0, 0, 0.34), inset 0 1px 0 rgba(255,255,255,0.08);
+      backdrop-filter: blur(14px) saturate(1.16);
       overflow: hidden;
-      transition: background 140ms ease, border-color 140ms ease, box-shadow 140ms ease, backdrop-filter 140ms ease;
-      text-shadow: 0 1px 10px rgba(0, 0, 0, 0.62);
-    }
-    .widget.is-dragging {
-      box-shadow: 0 12px 30px var(--shadow-drag), inset 0 1px 0 var(--edge-light-soft);
-      backdrop-filter: blur(8px) saturate(1.05);
+      contain: paint;
+      transition: background 150ms ease, border-color 150ms ease, box-shadow 150ms ease, backdrop-filter 150ms ease;
     }
     .topbar {
-      min-height: 42px;
+      min-width: 0;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 10px;
+      gap: 8px;
       --wails-draggable: drag;
       -webkit-app-region: drag;
       cursor: grab;
     }
-    .topbar:active {
-      cursor: grabbing;
-    }
+    .topbar:active { cursor: grabbing; }
     .brand {
+      flex: 1;
+      min-width: 0;
       display: inline-flex;
       align-items: center;
-      gap: 9px;
-      flex: 1;
+      gap: 8px;
+    }
+    .brand > div:last-child {
       min-width: 0;
     }
     .mark {
@@ -252,23 +312,33 @@ const aiStatsWidgetHTML = `<!doctype html>
       display: inline-grid;
       place-items: center;
       border-radius: 8px;
-      color: #071311;
-      background: linear-gradient(135deg, var(--accent), #b2efe5);
-      font-weight: 800;
-      font-size: 13px;
+      color: #06110f;
+      background: linear-gradient(135deg, var(--accent), #c8fff6);
+      font-size: 12px;
+      font-weight: 850;
     }
     .brand strong {
       display: block;
-      font-size: 13px;
-      letter-spacing: 0;
+      font-size: 12px;
       line-height: 1.1;
+      letter-spacing: 0;
     }
     .brand span {
       display: block;
-      margin-top: 2px;
-      color: var(--muted);
-      font-size: 11px;
+      margin-top: 1px;
+      color: var(--faint);
+      font-size: 10px;
       line-height: 1.1;
+    }
+    .brand-meta {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-width: 0;
+      margin-top: 2px;
+      color: var(--faint);
+      font-size: 10px;
+      line-height: 1;
     }
     .actions {
       display: inline-flex;
@@ -278,210 +348,232 @@ const aiStatsWidgetHTML = `<!doctype html>
       -webkit-app-region: no-drag;
     }
     .icon-btn {
-      width: 34px;
-      height: 34px;
+      width: 32px;
+      height: 32px;
       display: inline-grid;
       place-items: center;
       border-radius: 10px;
       color: var(--muted);
-      transition: background 140ms ease, color 140ms ease, transform 140ms ease;
+      background: rgba(255,255,255,0.035);
+      transition: color 140ms ease, background 140ms ease, transform 140ms ease;
     }
-    .pin-btn {
-      width: auto;
-      min-width: 68px;
-      grid-auto-flow: column;
-      grid-auto-columns: max-content;
-      gap: 5px;
-      padding: 0 10px;
-      border: 1px solid var(--line);
-      font-size: 12px;
-      font-weight: 650;
-    }
-    .pin-btn.is-pinned {
-      color: #071311;
-      border-color: rgba(102,199,184,0.45);
-      background: linear-gradient(135deg, var(--accent), #b2efe5);
+    .icon-btn svg {
+      width: 15px;
+      height: 15px;
+      stroke-width: 2.3;
     }
     .icon-btn:hover {
       color: var(--text);
-      background: var(--hover-bg);
+      background: rgba(255,255,255,0.08);
       transform: translateY(-1px);
     }
-    .pin-btn.is-pinned:hover {
-      color: #071311;
-      background: linear-gradient(135deg, #7bd3c7, #c3f5ed);
+    .icon-btn.is-pinned {
+      color: #06110f;
+      background: linear-gradient(135deg, var(--accent), #c8fff6);
     }
     .hero {
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;
-      gap: 12px;
       align-items: end;
-      padding: 14px;
+      gap: 10px;
+      padding: 10px 11px;
       border: 1px solid var(--line-strong);
-      border-radius: 14px;
-      background: var(--hero-bg);
+      border-radius: 13px;
+      background: var(--panel-strong);
     }
-    .hero span {
+    .metric-label {
+      display: block;
       color: var(--muted);
-      font-size: 11px;
-      font-weight: 600;
+      font-size: 10px;
+      font-weight: 700;
+      line-height: 1;
       text-transform: uppercase;
     }
-    .hero strong {
+    .metric-value {
       display: block;
-      margin-top: 4px;
-      font-family: "Geist Mono", "Cascadia Mono", Consolas, monospace;
-      font-size: 32px;
-      line-height: 1.05;
+      margin-top: 5px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-family: "Cascadia Mono", Consolas, monospace;
+      font-weight: 850;
       letter-spacing: 0;
+      line-height: 1;
     }
-    .hero em {
+    .hero .metric-value {
+      color: #f8fffd;
+      font-size: 28px;
+    }
+    .hero-sub {
       display: block;
-      margin-top: 6px;
+      margin-top: 5px;
       color: var(--faint);
-      font-size: 12px;
+      font-size: 11px;
       font-style: normal;
+      line-height: 1.2;
     }
     .pulse {
-      width: 42px;
-      height: 42px;
+      width: 34px;
+      height: 34px;
       display: grid;
       place-items: center;
-      border-radius: 14px;
-      color: var(--accent);
-      background: var(--pulse-bg);
-      box-shadow: 0 0 0 1px var(--pulse-line);
+      border-radius: 12px;
+      color: var(--accent-strong);
+      background: rgba(102, 199, 184, 0.11);
+      box-shadow: 0 0 0 1px rgba(102,199,184,0.18);
+      font-weight: 850;
     }
     .stats {
+      min-height: 0;
       display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 6px;
     }
     .tile {
       min-width: 0;
-      padding: 11px;
+      padding: 8px 9px;
       border: 1px solid var(--line);
-      border-radius: 12px;
-      background: var(--tile-bg);
+      border-radius: 11px;
+      background: var(--panel-soft);
     }
-    .tile span {
-      display: block;
-      color: var(--muted);
-      font-size: 11px;
-      line-height: 1.2;
-    }
-    .tile strong {
-      display: block;
-      margin-top: 6px;
-      font-family: "Geist Mono", "Cascadia Mono", Consolas, monospace;
-      font-size: 18px;
-      line-height: 1.1;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    .details {
-      min-height: 0;
-      display: grid;
-      grid-template-rows: auto auto;
-      gap: 8px;
-    }
-    .trend {
-      display: grid;
-      grid-template-columns: repeat(7, 1fr);
-      align-items: end;
-      gap: 5px;
-      height: 62px;
-      padding: 10px 10px 8px;
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      background: var(--trend-bg);
-    }
-    .bar {
-      min-height: 4px;
-      border-radius: 99px 99px 3px 3px;
-      background: linear-gradient(180deg, var(--accent), var(--bar-fade));
-    }
-    .meta {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-      color: var(--muted);
-      font-size: 12px;
-    }
-    .meta-card {
-      min-width: 0;
-      padding: 10px;
-      border-radius: 12px;
-      background: var(--tile-bg);
-    }
-    .meta-card span {
-      display: block;
-      color: var(--faint);
-      font-size: 10px;
-      text-transform: uppercase;
-    }
-    .meta-card strong {
-      display: block;
-      margin-top: 4px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      font-size: 12px;
-    }
-    .footer {
-      display: grid;
-      grid-template-columns: minmax(78px, auto) minmax(0, 1fr) auto;
-      gap: 10px;
-      align-items: center;
-      min-height: 44px;
-      padding: 8px 10px;
-      border: 1px solid var(--line);
-      border-radius: 13px;
-      background: var(--tile-bg);
-      color: var(--faint);
-      font-size: 11px;
+    .tile .metric-value {
+      color: var(--text);
+      font-size: 15px;
     }
     .status {
       display: inline-flex;
       align-items: center;
       gap: 6px;
+      min-width: 0;
       white-space: nowrap;
-      min-height: 26px;
-      padding: 4px 8px;
-      border-radius: 999px;
-      background: var(--status-bg);
-      color: var(--muted);
     }
     .dot {
       width: 7px;
       height: 7px;
       border-radius: 50%;
       background: var(--accent);
-      box-shadow: 0 0 0 4px var(--dot-ring);
+      box-shadow: 0 0 0 4px rgba(102,199,184,0.12);
     }
-    .status.syncing .dot { background: var(--info); box-shadow: 0 0 0 4px var(--info-ring); }
+    .status.syncing .dot { background: var(--info); box-shadow: 0 0 0 4px rgba(139,199,255,0.13); }
     .status.offline .dot,
-    .status.error .dot { background: #ff8b96; box-shadow: 0 0 0 4px var(--error-ring); }
-    .status.error {
-      color: #ffb4bd;
+    .status.error .dot { background: #ff8b96; box-shadow: 0 0 0 4px rgba(255,139,150,0.13); }
+    .status.error { color: #ffb4bd; }
+    .transparent-metrics {
+      display: none;
     }
-    .opacity {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
+    html.is-transparent,
+    html.is-transparent body {
+      background: transparent !important;
+    }
+    body.is-transparent {
+      padding: 4px 8px;
+      background: transparent !important;
+    }
+    body.is-transparent,
+    body.is-transparent .widget,
+    body.is-transparent .topbar,
+    body.is-transparent .actions,
+    body.is-transparent .transparent-metrics {
+      background: transparent !important;
+    }
+    body.is-transparent *,
+    body.is-transparent *::before,
+    body.is-transparent *::after {
+      border-color: transparent !important;
+      background-color: transparent !important;
+      background-image: none !important;
+      box-shadow: none !important;
+      backdrop-filter: none !important;
+      -webkit-backdrop-filter: none !important;
+    }
+    body.is-transparent .widget {
+      grid-template-rows: 28px max-content 1fr;
+      gap: 0;
+      padding: 2px 6px;
+      border-color: transparent;
+      background: transparent !important;
+      box-shadow: none;
+      backdrop-filter: none;
+      text-shadow: none;
+    }
+    body.is-transparent .brand,
+    body.is-transparent .hero,
+    body.is-transparent .stats,
+    body.is-transparent .brand-meta {
+      display: none;
+    }
+    body.is-transparent .topbar {
+      justify-content: flex-end;
+      pointer-events: none;
+    }
+    body.is-transparent .actions {
+      pointer-events: auto;
+    }
+    body.is-transparent .icon-btn {
+      color: #f8fffd;
+      background: transparent;
+      box-shadow: none;
+      backdrop-filter: none;
+      width: 28px;
+      height: 28px;
+      filter:
+        drop-shadow(0 1px 1px rgba(0,0,0,0.86))
+        drop-shadow(0 0 1px rgba(0,0,0,0.8));
+    }
+    body.is-transparent .icon-btn.is-pinned {
+      color: #9ff4e8;
+      background: transparent;
+    }
+    body.is-transparent .icon-btn:hover {
+      color: #ffffff;
+      background: transparent;
+      transform: translateY(-1px) scale(1.04);
+    }
+    body.is-transparent .transparent-metrics {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 5px 12px;
+      align-self: start;
+      padding: 2px 0 0;
+      pointer-events: none;
+    }
+    body.is-transparent .transparent-item {
       min-width: 0;
-      border-radius: 999px;
-      --wails-draggable: no-drag;
-      -webkit-app-region: no-drag;
     }
-    .opacity input {
-      width: 100%;
-      min-width: 120px;
-      accent-color: var(--accent);
+    body.is-transparent .transparent-item span {
+      display: block;
+      color: #b8fff6;
+      font-family: "Microsoft YaHei UI", "Segoe UI", system-ui, sans-serif;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0;
+      line-height: 1;
+      -webkit-text-stroke: 0.2px rgba(0,5,8,0.9);
+      text-shadow:
+        0 2px 1px rgba(0,5,8,0.95),
+        1px 0 1px rgba(0,5,8,0.88),
+        -1px 0 1px rgba(0,5,8,0.88),
+        0 0 3px rgba(0,5,8,0.8);
     }
-    .error {
-      color: #ffb4bd;
+    body.is-transparent .transparent-item strong {
+      display: block;
+      margin-top: 2px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: #ffffff;
+      font-family: "Segoe UI Variable Display", "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif;
+      font-size: 20px;
+      font-weight: 800;
+      letter-spacing: 0;
+      line-height: 1;
+      -webkit-text-stroke: 0.25px rgba(0,5,8,0.9);
+      text-shadow:
+        0 2px 1px rgba(0,5,8,0.95),
+        2px 0 1px rgba(0,5,8,0.9),
+        -2px 0 1px rgba(0,5,8,0.9),
+        0 -1px 1px rgba(0,5,8,0.88),
+        0 0 4px rgba(0,5,8,0.82);
     }
   </style>
 </head>
@@ -492,54 +584,55 @@ const aiStatsWidgetHTML = `<!doctype html>
         <div class="mark">AI</div>
         <div>
           <strong>实时 AI 统计</strong>
-          <span>TokenBridge AI Spend</span>
+          <span class="brand-meta">
+            <span class="status live" id="statusWrap"><i class="dot"></i><span id="status">Live</span></span>
+            <span id="updated">--:--</span>
+          </span>
         </div>
       </div>
-      <div class="actions">
-        <button class="icon-btn pin-btn is-pinned" id="pin" type="button" title="窗口置顶" aria-pressed="true">
-          <span id="pinIcon">↑</span><span id="pinLabel">置顶中</span>
+      <div class="actions" id="actions">
+        <button class="icon-btn" id="pin" type="button" title="置顶并进入透明模式" aria-label="置顶并进入透明模式" aria-pressed="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 17v5" /><path d="M9 10.76 6.12 13.64a1 1 0 0 0 .71 1.7h10.34a1 1 0 0 0 .71-1.7L15 10.76V5l1.3-1.3a1 1 0 0 0-.7-1.7H8.4a1 1 0 0 0-.7 1.7L9 5z" /></svg>
         </button>
-        <button class="icon-btn" id="refresh" type="button" title="刷新">↻</button>
-        <button class="icon-btn" id="close" type="button" title="关闭">×</button>
+        <button class="icon-btn" id="refresh" type="button" title="刷新统计" aria-label="刷新统计">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /><path d="M3 21v-5h5" /><path d="M3 12a9 9 0 0 1 15.74-6.26L21 8" /><path d="M16 8h5V3" /></svg>
+        </button>
+        <button class="icon-btn" id="close" type="button" title="关闭" aria-label="关闭">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+        </button>
       </div>
     </header>
 
     <section class="hero">
       <div>
-        <span>今日花费</span>
-        <strong id="todayCost">--</strong>
-        <em id="todaySub">-- requests today</em>
+        <span class="metric-label">今日花费</span>
+        <strong class="metric-value" id="todayCost">--</strong>
+        <em class="hero-sub" id="todaySub">-- requests today</em>
       </div>
-      <div class="pulse" title="实时刷新状态">⌁</div>
+      <div class="pulse" title="实时刷新状态">AI</div>
     </section>
 
     <section class="stats" aria-label="AI usage summary">
-      <div class="tile"><span>今日请求</span><strong id="todayRequests">--</strong></div>
-      <div class="tile"><span>累计请求</span><strong id="totalRequests">--</strong></div>
-      <div class="tile"><span>累计花费</span><strong id="totalCost">--</strong></div>
-      <div class="tile"><span>缓存命中</span><strong id="cacheHit">--</strong></div>
+      <div class="tile"><span class="metric-label">今日请求</span><strong class="metric-value" id="todayRequests">--</strong></div>
+      <div class="tile"><span class="metric-label">累计请求</span><strong class="metric-value" id="totalRequests">--</strong></div>
+      <div class="tile"><span class="metric-label">累计花费</span><strong class="metric-value" id="totalCost">--</strong></div>
+      <div class="tile"><span class="metric-label">缓存命中</span><strong class="metric-value" id="cacheHit">--</strong></div>
     </section>
 
-    <section class="details">
-      <div class="trend" id="trend" aria-label="seven day AI cost trend"></div>
-      <div class="meta">
-        <div class="meta-card"><span>Top Tool</span><strong id="topTool">--</strong></div>
-        <div class="meta-card"><span>Top Model</span><strong id="topModel">--</strong></div>
-      </div>
+    <section class="transparent-metrics" aria-label="transparent AI usage summary">
+      <div class="transparent-item"><span>今日花费</span><strong id="floatTodayCost">--</strong></div>
+      <div class="transparent-item"><span>今日请求</span><strong id="floatTodayRequests">--</strong></div>
+      <div class="transparent-item"><span>累计花费</span><strong id="floatTotalCost">--</strong></div>
+      <div class="transparent-item"><span>累计请求</span><strong id="floatTotalRequests">--</strong></div>
     </section>
 
-    <footer class="footer">
-      <span class="status live" id="statusWrap"><i class="dot"></i><span id="status">Live</span></span>
-      <label class="opacity" title="调节浮窗显示强度" aria-label="调节浮窗显示强度">
-        <input id="opacity" type="range" min="0" max="100" value="88" />
-      </label>
-      <span id="updated">--:--</span>
-    </footer>
   </main>
   <script>
     const $ = (id) => document.getElementById(id);
     let bridge;
-    let pinned = localStorage.getItem("ai-stats-pinned") !== "false";
+    let pinned = false;
+    let nativeOverlaySupported = false;
+    let hitRegionFrame = 0;
     const rate = 7.2;
 
     function setStatus(text, state) {
@@ -547,49 +640,41 @@ const aiStatsWidgetHTML = `<!doctype html>
       $("statusWrap").className = "status " + (state || "live");
     }
 
-    function setPinned(next, syncNative) {
-      pinned = Boolean(next);
-      localStorage.setItem("ai-stats-pinned", String(pinned));
-      $("pin").classList.toggle("is-pinned", pinned);
-      $("pin").setAttribute("aria-pressed", String(pinned));
-      $("pin").title = pinned ? "取消置顶，窗口不再覆盖其他应用" : "置顶窗口，保持浮在桌面上";
-      $("pinIcon").textContent = pinned ? "↑" : "↕";
-      $("pinLabel").textContent = pinned ? "置顶中" : "置顶";
-      if (syncNative && bridge) bridge.SetAlwaysOnTop(pinned);
+    function collectActionRects() {
+      const scale = window.devicePixelRatio || 1;
+      const bleed = 18;
+      const rect = $("actions").getBoundingClientRect();
+      return [{
+        left: Math.max(0, Math.floor((rect.left - bleed) * scale)),
+        top: Math.max(0, Math.floor((rect.top - bleed) * scale)),
+        right: Math.ceil((rect.right + bleed) * scale),
+        bottom: Math.ceil((rect.bottom + bleed) * scale)
+      }].filter((item) => item.right > item.left && item.bottom > item.top);
     }
 
-    function setOpacity(value) {
-      const raw = Number(value);
-      const normalized = Math.max(0, Math.min(100, Number.isFinite(raw) ? raw : 88));
-      const root = document.documentElement;
-      const panelAlpha = normalized / 100;
-      const chromeScale = Math.min(1, normalized / 88);
-      const rgba = (r, g, b, a) => "rgba(" + r + ", " + g + ", " + b + ", " + (a * chromeScale).toFixed(3) + ")";
-      root.style.setProperty("--alpha", panelAlpha.toFixed(2));
-      root.style.setProperty("--wash-accent", rgba(102, 199, 184, 0.15));
-      root.style.setProperty("--wash-info", rgba(121, 175, 217, 0.11));
-      root.style.setProperty("--panel-soft", rgba(255, 255, 255, 0.06));
-      root.style.setProperty("--line", rgba(218, 232, 245, 0.14));
-      root.style.setProperty("--line-strong", rgba(102, 199, 184, 0.36));
-      root.style.setProperty("--hero-bg", rgba(4, 9, 13, 0.32));
-      root.style.setProperty("--tile-bg", rgba(255, 255, 255, 0.045));
-      root.style.setProperty("--trend-bg", rgba(255, 255, 255, 0.04));
-      root.style.setProperty("--status-bg", rgba(255, 255, 255, 0.055));
-      root.style.setProperty("--hover-bg", rgba(255, 255, 255, 0.08));
-      root.style.setProperty("--pulse-bg", rgba(102, 199, 184, 0.12));
-      root.style.setProperty("--pulse-line", rgba(102, 199, 184, 0.16));
-      root.style.setProperty("--bar-fade", rgba(102, 199, 184, 0.18));
-      root.style.setProperty("--shadow", rgba(0, 0, 0, 0.34));
-      root.style.setProperty("--shadow-drag", rgba(0, 0, 0, 0.28));
-      root.style.setProperty("--edge-light", rgba(255, 255, 255, 0.08));
-      root.style.setProperty("--edge-light-soft", rgba(255, 255, 255, 0.06));
-      root.style.setProperty("--dot-ring", rgba(102, 199, 184, 0.12));
-      root.style.setProperty("--info-ring", rgba(121, 175, 217, 0.12));
-      root.style.setProperty("--error-ring", rgba(255, 139, 150, 0.12));
-      $("opacity").value = String(normalized);
-      $("opacity").title = "调节浮窗背景和边框透明度，文字保持显示，当前 " + normalized + "%";
-      $("opacity").closest(".opacity")?.setAttribute("aria-label", $("opacity").title);
-      localStorage.setItem("ai-stats-opacity", String(normalized));
+    function syncHitMode() {
+      if (!bridge?.SetTransparentHitMode) return;
+      bridge.SetTransparentHitMode(pinned, pinned ? collectActionRects() : []);
+    }
+
+    function requestHitModeSync() {
+      if (hitRegionFrame) window.cancelAnimationFrame(hitRegionFrame);
+      hitRegionFrame = window.requestAnimationFrame(() => {
+        hitRegionFrame = 0;
+        syncHitMode();
+      });
+    }
+
+    function setPinned(next, syncNative) {
+      pinned = Boolean(next);
+      document.documentElement.classList.toggle("is-transparent", pinned);
+      document.body.classList.toggle("is-transparent", pinned);
+      $("pin").classList.toggle("is-pinned", pinned);
+      $("pin").setAttribute("aria-pressed", String(pinned));
+      $("pin").title = pinned ? "取消置顶并恢复普通模式" : "置顶并进入透明模式";
+      $("pin").setAttribute("aria-label", $("pin").title);
+      if (syncNative && bridge) bridge.SetAlwaysOnTop(pinned);
+      requestHitModeSync();
     }
 
     function money(usd) {
@@ -631,60 +716,62 @@ const aiStatsWidgetHTML = `<!doctype html>
     function render(data) {
       const today = data.today || {};
       const total = data.total || {};
-      $("todayCost").textContent = money(today.total_cost_usd);
-      $("todaySub").textContent = smallUSD(today.total_cost_usd) + " · " + compact(today.total_requests) + " requests today";
-      $("todayRequests").textContent = compact(today.total_requests);
-      $("totalRequests").textContent = compact(total.total_requests);
-      $("totalCost").textContent = money(total.total_cost_usd);
+      const todayCost = money(today.total_cost_usd);
+      const todayRequests = compact(today.total_requests);
+      const totalCost = money(total.total_cost_usd);
+      const totalRequests = compact(total.total_requests);
+      $("todayCost").textContent = todayCost;
+      $("todaySub").textContent = smallUSD(today.total_cost_usd) + " · " + todayRequests + " requests today";
+      $("todayRequests").textContent = todayRequests;
+      $("totalRequests").textContent = totalRequests;
+      $("totalCost").textContent = totalCost;
       $("cacheHit").textContent = pct(total.cache_hit_rate);
-      $("topTool").textContent = data.top_tool ? data.top_tool.name + " · " + money(data.top_tool.cost_usd) : "No recent tool";
-      $("topModel").textContent = data.top_model ? data.top_model.name + " · " + money(data.top_model.cost_usd) : "No recent model";
+      $("floatTodayCost").textContent = todayCost;
+      $("floatTodayRequests").textContent = todayRequests;
+      $("floatTotalCost").textContent = totalCost;
+      $("floatTotalRequests").textContent = totalRequests;
       const updated = data.updated_at ? new Date(data.updated_at) : new Date();
       $("updated").textContent = updated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-      renderTrend(data.trend || []);
     }
 
-    function renderTrend(points) {
-      const root = $("trend");
-      root.innerHTML = "";
-      const max = Math.max(0.000001, ...points.map((point) => Number(point.cost_usd || 0)));
-      for (const point of points.slice(-7)) {
-        const bar = document.createElement("div");
-        bar.className = "bar";
-        bar.style.height = Math.max(6, Math.round((Number(point.cost_usd || 0) / max) * 48)) + "px";
-        bar.title = point.day + ": " + money(point.cost_usd) + " · " + compact(point.requests) + " requests";
-        root.appendChild(bar);
-      }
-      while (root.children.length < 7) {
-        const bar = document.createElement("div");
-        bar.className = "bar";
-        bar.style.height = "4px";
-        root.prepend(bar);
-      }
-    }
-
-    $("opacity").addEventListener("input", (event) => setOpacity(event.target.value));
     $("refresh").addEventListener("click", () => loadStats());
-    $("pin").addEventListener("click", () => setPinned(!pinned, true));
-    $("close").addEventListener("click", () => bridge?.Close());
+    $("pin").addEventListener("click", async () => {
+      if (!pinned && nativeOverlaySupported && bridge?.ShowNativeOverlay) {
+        try {
+          if (await bridge.ShowNativeOverlay()) return;
+        } catch (_) {}
+        setStatus("Overlay unavailable", "error");
+        return;
+      }
+      setPinned(!pinned, true);
+    });
+    $("close").addEventListener("click", () => {
+      if (bridge?.SetTransparentHitMode) bridge.SetTransparentHitMode(false, []);
+      bridge?.Close();
+    });
 
     const widget = document.querySelector(".widget");
     const topbar = document.querySelector(".topbar");
     topbar.addEventListener("pointerdown", (event) => {
       if (event.target.closest("button")) return;
+      if (pinned) return;
       widget.classList.add("is-dragging");
     });
     window.addEventListener("pointerup", () => widget.classList.remove("is-dragging"));
     window.addEventListener("blur", () => widget.classList.remove("is-dragging"));
+    window.addEventListener("resize", requestHitModeSync);
 
-    setOpacity(localStorage.getItem("ai-stats-opacity") || 88);
-    setPinned(pinned, false);
-    waitForBridge()
-      .then((resolved) => {
-        bridge = resolved;
-        setPinned(pinned, true);
-        return loadStats();
-      })
+	waitForBridge()
+		.then(async (resolved) => {
+			bridge = resolved;
+			try {
+				nativeOverlaySupported = Boolean(await bridge.SupportsNativeOverlay?.());
+			} catch (_) {
+				nativeOverlaySupported = false;
+			}
+			setPinned(false, true);
+			return loadStats();
+		})
       .then(() => setInterval(loadStats, 12000))
       .catch(() => {
         setStatus("Bridge error", "error");
