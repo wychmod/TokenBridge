@@ -14,6 +14,7 @@ type AppPaths struct {
 	BaseDir   string
 	ConfigDir string
 	DataDir   string
+	LogDir    string
 	Config    string
 	Database  string
 }
@@ -30,6 +31,7 @@ func Resolve() (AppPaths, error) {
 		BaseDir:   configDir,
 		ConfigDir: configDir,
 		DataDir:   dataDir,
+		LogDir:    filepath.Join(configDir, "logs"),
 		Config:    filepath.Join(configDir, "config.yaml"),
 		Database:  filepath.Join(dataDir, "tokenbridge.db"),
 	}, nil
@@ -41,6 +43,9 @@ func EnsureUserDirs(appPaths AppPaths) error {
 	}
 	if err := os.MkdirAll(appPaths.DataDir, 0o755); err != nil {
 		return fmt.Errorf("create data dir: %w", err)
+	}
+	if err := os.MkdirAll(appPaths.LogDir, 0o755); err != nil {
+		return fmt.Errorf("create log dir: %w", err)
 	}
 	return nil
 }

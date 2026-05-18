@@ -1,6 +1,6 @@
 //go:build !windows && !darwin
 
-package main
+package desktop
 
 func applyAIStatsTransparentHitMode(_ bool, _ []WidgetHitRect) error {
 	return nil

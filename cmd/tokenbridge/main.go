@@ -100,6 +100,9 @@ func main() {
 	if err := server.Shutdown(ctx); err != nil {
 		application.Logger.Error().Err(err).Msg("graceful shutdown failed")
 	}
+	if application.CloseLogs != nil {
+		_ = application.CloseLogs()
+	}
 }
 
 func shouldRunInTray() bool {

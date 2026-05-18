@@ -134,7 +134,7 @@ TokenBridge 是一个面向本地部署、团队内网和私有化场景的 **AI
 | 请求日志 | `internal/requestlog/service.go` | 查询、筛选、统计、Fallback 识别、失败趋势和 CSV 导出。 |
 | 用量统计 | `internal/usage/service.go` | 记录请求用量，生成 Provider / Model / Key 维度分析。 |
 | 浏览器版入口 | `cmd/tokenbridge/main.go` | HTTP Server、Windows 托盘、单实例检查、自动打开管理后台。 |
-| 桌面版入口 | `main.go`, `app.go` | Wails 窗口、SPA Proxy、桌面 Bindings、托盘菜单、自检与状态恢复。 |
+| 桌面版入口 | `main.go`, `internal/desktop/` | `main.go` 保留 Wails bootstrap；桌面窗口、SPA Proxy、桌面 Bindings、托盘菜单、自检与状态恢复放在 `internal/desktop/`。 |
 
 ## Dashboard 监控设计
 
@@ -491,6 +491,7 @@ Fallback 结果会写入请求日志 metadata，并在以下位置可见：
 │   ├── admin/                 # Dashboard / Analytics 聚合
 │   ├── app/                   # 应用启动与依赖装配
 │   ├── auth/                  # Local Key 服务
+│   ├── desktop/               # Wails 桌面壳、桌面 bindings、托盘、AI 统计浮窗
 │   ├── provider/              # Provider 注册、状态与模型能力
 │   ├── requestlog/            # Trace、日志查询、统计与导出
 │   ├── routing/               # 模型别名、路由规则、Fallback Chain
@@ -505,8 +506,8 @@ Fallback 结果会写入请求日志 metadata，并在以下位置可见：
 ├── migrations/                # 数据库迁移
 ├── packaging/                 # 分发说明
 ├── .github/workflows/         # CI 构建流程
-├── main.go                    # Wails 桌面版入口
-├── app.go                     # Wails bindings 与桌面能力
+├── main.go                    # Wails 桌面版薄入口，不承载业务实现
+├── AGENTS.md                  # Agent 代码生成与目录规范
 └── wails.json                 # Wails 配置
 ```
 
@@ -538,9 +539,10 @@ wails build -platform darwin/universal  # macOS 桌面版
 
 - Windows 正式浏览器版默认隐藏控制台并常驻托盘。
 - `TB_CONSOLE_MODE=1` 可让正式 exe 以前台控制台运行，便于排查日志。
+- 运行时应用日志会写入用户配置目录下的 `TokenBridge/logs/tokenbridge.log`，`error` 及以上级别同时写入 `TokenBridge/logs/tokenbridge.err.log`。
 - 单实例 Mutex 会阻止重复启动；已有实例运行时，新进程会打开管理后台后退出。
 - 管理后台资源会嵌入 Go 二进制，分发时不需要额外 Web Server。
-- 请求日志以 Trace ID、Provider、状态码、耗时、Fallback、请求模型和实际模型为核心字段。
+- 请求日志以 Trace ID、Provider、状态码、耗时、Fallback、请求模型和实际模型为核心字段，继续保存在 SQLite 中供控制台检索和导出。
 
 ## 安全建议
 

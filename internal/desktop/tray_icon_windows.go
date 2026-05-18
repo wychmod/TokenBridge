@@ -1,8 +1,8 @@
 //go:build windows
 
-package main
+package desktop
 
 import _ "embed"
 
-//go:embed cmd/tokenbridge/tray-icon.ico
+//go:embed assets/tray-icon.ico
 var trayIcon []byte

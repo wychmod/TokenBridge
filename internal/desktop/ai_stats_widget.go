@@ -1,4 +1,4 @@
-package main
+package desktop
 
 import (
 	"context"
@@ -36,7 +36,7 @@ type WidgetHitRect struct {
 	Bottom int `json:"bottom"`
 }
 
-func parseAIStatsWidgetMode() (bool, string) {
+func ParseAIStatsWidgetMode() (bool, string) {
 	args := os.Args[1:]
 	for index, arg := range args {
 		if arg != "--ai-stats-widget" {
@@ -54,7 +54,7 @@ func parseAIStatsWidgetMode() (bool, string) {
 	return false, ""
 }
 
-func runAIStatsWidget(adminURL string) error {
+func RunAIStatsWidget(adminURL string) error {
 	adminURL = strings.TrimRight(adminURL, "/")
 	if adminURL == "" {
 		return fmt.Errorf("missing --admin-url for AI stats widget")

@@ -26,6 +26,7 @@ type Application struct {
 	Config      config.Config
 	Router      *server.Router
 	Logger      zerolog.Logger
+	CloseLogs   func() error
 	DB          *gorm.DB
 	Providers   *provider.Service
 	Keys        *auth.Service
@@ -43,30 +44,42 @@ func New() (*Application, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := paths.EnsureUserDirs(appPaths); err != nil {
+		return nil, err
+	}
+
+	logger, closeLogs, err := newRuntimeLogger(appPaths.LogDir, os.Stdout)
+	if err != nil {
+		return nil, err
+	}
+	fail := func(err error) (*Application, error) {
+		logger.Error().Err(err).Msg("application startup failed")
+		_ = closeLogs()
+		return nil, err
+	}
 
 	cfgPath := os.Getenv("TB_CONFIG")
 	if cfgPath == "" {
 		cfgPath, err = paths.EnsureUserConfig(appPaths)
 		if err != nil {
-			return nil, err
+			return fail(err)
 		}
 	}
 
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
-		return nil, err
+		return fail(err)
 	}
 	cfg.Database.Path = paths.ResolveUserDataPath(appPaths, cfg.Database.Path, "data/tokenbridge.db")
 	cfg.Security.EncryptionKeyFile = paths.ResolveUserDataPath(appPaths, cfg.Security.EncryptionKeyFile, ".secret")
 
 	if err := paths.MigrateLegacyDatabase(cfg.Database.Path); err != nil {
-		return nil, err
+		return fail(err)
 	}
 
-	logger := zerolog.New(os.Stdout).With().Timestamp().Str("service", "tokenbridge").Logger()
 	db, err := storage.OpenDatabase(cfg.Database)
 	if err != nil {
-		return nil, err
+		return fail(err)
 	}
 
 	providerService := provider.NewService(db)
@@ -82,6 +95,7 @@ func New() (*Application, error) {
 	application := &Application{
 		Config:      cfg,
 		Logger:      logger,
+		CloseLogs:   closeLogs,
 		DB:          db,
 		Providers:   providerService,
 		Keys:        keyService,

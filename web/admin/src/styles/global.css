@@ -25,6 +25,7 @@
   --space-7: 48px;
 
   --sidebar-width: 200px;
+  --desktop-titlebar-height: 36px;
 
   --motion-fast: 140ms;
   --motion-base: 220ms;
@@ -459,7 +460,7 @@ a { text-decoration: none; color: inherit; }
   justify-content: space-between;
   gap: var(--space-4);
   padding: 0 var(--space-3);
-  min-height: 36px;
+  min-height: var(--desktop-titlebar-height);
   margin-bottom: 0;
   background: color-mix(in srgb, var(--bg-surface) 98%, var(--bg-base));
   border-bottom: 1px solid var(--border-subtle);
@@ -1141,6 +1142,14 @@ select.form-control { cursor: pointer; }
   animation: slideInRight var(--motion-slow) var(--motion-ease);
 }
 
+[data-desktop="true"] .drawer-overlay {
+  top: var(--desktop-titlebar-height);
+}
+
+[data-desktop="true"] .drawer {
+  top: var(--desktop-titlebar-height);
+}
+
 .drawer.drawer-wide {
   width: min(720px, 94vw);
 }
@@ -1152,10 +1161,12 @@ select.form-control { cursor: pointer; }
   gap: var(--space-3);
   padding: var(--space-4) var(--space-5);
   border-bottom: 1px solid var(--border-subtle);
+  flex: 0 0 auto;
 }
 
 .drawer-body {
   flex: 1;
+  min-height: 0;
   overflow: auto;
   padding: var(--space-5);
   display: flex;
@@ -1170,6 +1181,7 @@ select.form-control { cursor: pointer; }
   padding: var(--space-4) var(--space-5);
   border-top: 1px solid var(--border-subtle);
   background: var(--bg-base);
+  flex: 0 0 auto;
 }
 
 /* ------------------------------------------------------------------
@@ -2617,7 +2629,7 @@ textarea:focus-visible {
   }
   .app-shell.has-titlebar .main-column {
     grid-row: 2;
-    min-height: calc(100dvh - 36px);
+    min-height: calc(100dvh - var(--desktop-titlebar-height));
   }
   .page-content {
     padding: var(--space-3);

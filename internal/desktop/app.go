@@ -1,4 +1,4 @@
-package main
+package desktop
 
 import (
 	"context"
@@ -132,6 +132,9 @@ func (d *DesktopApp) Shutdown(ctx context.Context) {
 		if err := d.Server.Shutdown(shutdownCtx); err != nil {
 			d.Application.Logger.Error().Err(err).Msg("graceful shutdown failed")
 		}
+	}
+	if d.Application != nil && d.Application.CloseLogs != nil {
+		_ = d.Application.CloseLogs()
 	}
 }
 

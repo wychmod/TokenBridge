@@ -1,6 +1,6 @@
 //go:build darwin
 
-package main
+package desktop
 
 /*
 #cgo CFLAGS: -x objective-c -fblocks
