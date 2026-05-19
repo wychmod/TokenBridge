@@ -177,7 +177,8 @@ export const useAdminStore = create<AdminState>((set, get) => ({
       return;
     }
     const saved = mapProviderFromApi(result.data);
-    set((state) => ({ providers: upsert(state.providers, saved), selectedProviderId: saved.id }));
+    set({ selectedProviderId: saved.id });
+    await get().reloadProviders();
     get().pushNotice({ tone: "success", title: "供应商配置已保存", message: `${saved.name} 已写入本地数据库。` });
   },
   deleteProvider: async (id) => {
