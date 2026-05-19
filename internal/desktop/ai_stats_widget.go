@@ -78,16 +78,7 @@ func RunAIStatsWidget(adminURL string) error {
 		AssetServer: &assetserver.Options{
 			Handler: http.HandlerFunc(serveAIStatsWidgetHTML),
 		},
-		Windows: &windows.Options{
-			WebviewIsTransparent:              true,
-			WindowIsTranslucent:               false,
-			DisableWindowIcon:                 true,
-			BackdropType:                      windows.None,
-			DisablePinchZoom:                  true,
-			EnableSwipeGestures:               false,
-			Theme:                             windows.SystemDefault,
-			DisableFramelessWindowDecorations: true,
-		},
+		Windows: aiStatsWidgetWindowsOptions(),
 		Mac: &mac.Options{
 			TitleBar:             mac.TitleBarHiddenInset(),
 			Appearance:           mac.NSAppearanceNameDarkAqua,
@@ -97,6 +88,19 @@ func RunAIStatsWidget(adminURL string) error {
 		OnStartup: widget.Startup,
 		Bind:      []interface{}{widget},
 	})
+}
+
+func aiStatsWidgetWindowsOptions() *windows.Options {
+	return &windows.Options{
+		WebviewIsTransparent:              true,
+		WindowIsTranslucent:               true,
+		DisableWindowIcon:                 true,
+		BackdropType:                      windows.None,
+		DisablePinchZoom:                  true,
+		EnableSwipeGestures:               false,
+		Theme:                             windows.SystemDefault,
+		DisableFramelessWindowDecorations: true,
+	}
 }
 
 func (w *AIStatsWidget) Startup(ctx context.Context) {
@@ -696,6 +700,7 @@ const aiStatsWidgetHTML = `<!doctype html>
 
     async function waitForBridge() {
       for (let i = 0; i < 80; i++) {
+        if (window.go?.desktop?.AIStatsWidget) return window.go.desktop.AIStatsWidget;
         if (window.go?.main?.AIStatsWidget) return window.go.main.AIStatsWidget;
         await new Promise((resolve) => setTimeout(resolve, 50));
       }
