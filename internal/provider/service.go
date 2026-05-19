@@ -4,7 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -14,10 +19,12 @@ import (
 )
 
 type Service struct {
-	db *gorm.DB
+	db         *gorm.DB
+	httpClient *http.Client
 }
 
 type ProviderInput struct {
+	ID             string   `json:"id"`
 	Name           string   `json:"name"`
 	Type           string   `json:"type"`
 	BaseURL        string   `json:"base_url"`
@@ -38,8 +45,16 @@ type HealthCheckResult struct {
 	Message   string   `json:"message"`
 }
 
+type modelProbeResult struct {
+	LatencyMS int
+	Models    []string
+}
+
 func NewService(db *gorm.DB) *Service {
-	return &Service{db: db}
+	return &Service{
+		db:         db,
+		httpClient: &http.Client{Timeout: 10 * time.Second},
+	}
 }
 
 func (s *Service) List(ctx context.Context) ([]models.Provider, error) {
@@ -137,11 +152,41 @@ func (s *Service) TestConnection(ctx context.Context, id string) (HealthCheckRes
 	if err != nil {
 		return HealthCheckResult{}, err
 	}
+	return s.testConnection(ctx, *provider)
+}
+
+func (s *Service) TestConnectionInput(ctx context.Context, input ProviderInput) (HealthCheckResult, error) {
+	if err := ValidateType(input.Type); err != nil {
+		return HealthCheckResult{}, err
+	}
+	return s.testConnection(ctx, s.providerFromInput(ctx, input))
+}
+
+func (s *Service) testConnection(ctx context.Context, provider models.Provider) (HealthCheckResult, error) {
+	configuredModels := decodeModels(provider.ModelsJSON)
+	probe, err := s.probeModels(ctx, provider)
+	if err != nil {
+		return HealthCheckResult{
+			Status:    "warning",
+			LatencyMS: probe.LatencyMS,
+			Models:    configuredModels,
+			Message:   err.Error(),
+		}, nil
+	}
+
+	discoveredModels := probe.Models
+	if len(discoveredModels) == 0 {
+		discoveredModels = configuredModels
+	}
+	message := "供应商连接正常"
+	if len(discoveredModels) > 0 {
+		message = fmt.Sprintf("供应商连接正常，模型列表可读取（%d 个）", len(discoveredModels))
+	}
 	return HealthCheckResult{
 		Status:    "healthy",
-		LatencyMS: 178,
-		Models:    decodeModels(provider.ModelsJSON),
-		Message:   "Provider 配置已读取，基础连接参数完整",
+		LatencyMS: probe.LatencyMS,
+		Models:    discoveredModels,
+		Message:   message,
 	}, nil
 }
 
@@ -150,11 +195,66 @@ func (s *Service) DiscoverModels(ctx context.Context, id string) ([]string, erro
 	if err != nil {
 		return nil, err
 	}
-	models := decodeModels(provider.ModelsJSON)
-	if len(models) == 0 {
-		models = []string{"gpt-4o", "gpt-4o-mini", "claude-sonnet-4", "deepseek-chat"}
+	return s.discoverModels(ctx, *provider)
+}
+
+func (s *Service) DiscoverModelsInput(ctx context.Context, input ProviderInput) ([]string, error) {
+	if err := ValidateType(input.Type); err != nil {
+		return nil, err
 	}
-	return models, nil
+	return s.discoverModels(ctx, s.providerFromInput(ctx, input))
+}
+
+func (s *Service) discoverModels(ctx context.Context, provider models.Provider) ([]string, error) {
+	probe, err := s.probeModels(ctx, provider)
+	if err != nil {
+		return nil, err
+	}
+	if len(probe.Models) == 0 {
+		return nil, errors.New("供应商响应中未发现模型 ID")
+	}
+	return probe.Models, nil
+}
+
+func (s *Service) probeModels(ctx context.Context, provider models.Provider) (modelProbeResult, error) {
+	startedAt := time.Now()
+	endpoint, err := buildProbeEndpoint(provider.BaseURL)
+	if err != nil {
+		return modelProbeResult{LatencyMS: elapsedMilliseconds(startedAt)}, fmt.Errorf("供应商 base_url 无效：%v", err)
+	}
+
+	apiKey := strings.TrimSpace(provider.APIKeyEncrypted)
+	if apiKey == "" {
+		return modelProbeResult{LatencyMS: elapsedMilliseconds(startedAt)}, errors.New("请填写 API Key/Token 后再测试连接")
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return modelProbeResult{LatencyMS: elapsedMilliseconds(startedAt)}, fmt.Errorf("构造供应商探测请求失败：%v", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	setProviderProbeHeaders(req, provider, apiKey)
+
+	client := s.httpClient
+	if client == nil {
+		client = http.DefaultClient
+	}
+	resp, err := client.Do(req)
+	latencyMS := elapsedMilliseconds(startedAt)
+	if err != nil {
+		return modelProbeResult{LatencyMS: latencyMS}, fmt.Errorf("连接供应商失败：%v", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return modelProbeResult{LatencyMS: latencyMS}, errors.New(probeFailureMessage(resp.StatusCode, body))
+	}
+
+	return modelProbeResult{
+		LatencyMS: latencyMS,
+		Models:    extractModelIDs(body),
+	}, nil
 }
 
 func (s *Service) ResolveByModel(ctx context.Context, model string) (*models.Provider, error) {
@@ -219,4 +319,193 @@ func fallbackString(value string, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func (s *Service) providerFromInput(ctx context.Context, input ProviderInput) models.Provider {
+	apiKey := strings.TrimSpace(input.APIKey)
+	if apiKey == "" && input.ID != "" {
+		if saved, err := s.Get(ctx, input.ID); err == nil {
+			apiKey = saved.APIKeyEncrypted
+		}
+	}
+	modelsJSON, _ := json.Marshal(input.Models)
+	return models.Provider{
+		ID:              input.ID,
+		Name:            input.Name,
+		Type:            NormalizeType(input.Type),
+		BaseURL:         input.BaseURL,
+		APIKeyEncrypted: apiKey,
+		OrganizationID:  input.OrganizationID,
+		ModelsJSON:      string(modelsJSON),
+	}
+}
+
+func setProviderProbeHeaders(req *http.Request, provider models.Provider, apiKey string) {
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	if IsAnthropic(provider.Type) {
+		req.Header.Set("x-api-key", apiKey)
+		req.Header.Set("anthropic-version", "2023-06-01")
+		return
+	}
+	if provider.OrganizationID != "" {
+		req.Header.Set("OpenAI-Organization", provider.OrganizationID)
+	}
+}
+
+func buildProbeEndpoint(baseURL string) (string, error) {
+	trimmed := strings.TrimSpace(baseURL)
+	if trimmed == "" {
+		return "", fmt.Errorf("Provider 未配置 base_url")
+	}
+	parsed, err := url.Parse(trimmed)
+	if err != nil {
+		return "", err
+	}
+	if parsed.Scheme == "" || parsed.Host == "" {
+		return "", fmt.Errorf("base_url 必须包含协议和主机")
+	}
+
+	basePath := strings.TrimRight(parsed.Path, "/")
+	probePath := "/v1/models"
+	if strings.HasSuffix(basePath, "/v1") {
+		probePath = "/models"
+	}
+	parsed.Path = basePath + probePath
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.String(), nil
+}
+
+func elapsedMilliseconds(startedAt time.Time) int {
+	ms := time.Since(startedAt).Milliseconds()
+	if ms < 0 {
+		return 0
+	}
+	return int(ms)
+}
+
+func extractModelIDs(body []byte) []string {
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil
+	}
+
+	var models []string
+	for _, key := range []string{"data", "models"} {
+		raw, ok := payload[key]
+		if !ok {
+			continue
+		}
+		models = append(models, extractModelIDsFromArray(raw)...)
+		if len(models) > 0 {
+			return uniqueStrings(models)
+		}
+	}
+
+	var list []string
+	if err := json.Unmarshal(body, &list); err == nil {
+		return uniqueStrings(list)
+	}
+	return nil
+}
+
+func extractModelIDsFromArray(raw json.RawMessage) []string {
+	var items []json.RawMessage
+	if err := json.Unmarshal(raw, &items); err != nil {
+		return nil
+	}
+	models := make([]string, 0, len(items))
+	for _, item := range items {
+		var id string
+		if err := json.Unmarshal(item, &id); err == nil {
+			if strings.TrimSpace(id) != "" {
+				models = append(models, strings.TrimSpace(id))
+			}
+			continue
+		}
+
+		var object map[string]any
+		if err := json.Unmarshal(item, &object); err != nil {
+			continue
+		}
+		for _, key := range []string{"id", "name", "model"} {
+			if value, ok := object[key].(string); ok && strings.TrimSpace(value) != "" {
+				models = append(models, strings.TrimSpace(value))
+				break
+			}
+		}
+	}
+	return models
+}
+
+func uniqueStrings(values []string) []string {
+	result := make([]string, 0, len(values))
+	seen := map[string]struct{}{}
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		result = append(result, trimmed)
+	}
+	return result
+}
+
+func probeFailureMessage(statusCode int, body []byte) string {
+	detail := extractUpstreamErrorMessage(body)
+	switch statusCode {
+	case http.StatusUnauthorized, http.StatusForbidden:
+		if detail == "" {
+			return fmt.Sprintf("认证失败（%d）：请检查 API Key/Token", statusCode)
+		}
+		return fmt.Sprintf("认证失败（%d）：%s", statusCode, detail)
+	default:
+		if detail == "" {
+			return fmt.Sprintf("供应商返回 HTTP %d", statusCode)
+		}
+		return fmt.Sprintf("供应商返回 HTTP %d：%s", statusCode, detail)
+	}
+}
+
+func extractUpstreamErrorMessage(body []byte) string {
+	var payload struct {
+		Error   any    `json:"error"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(body, &payload); err == nil {
+		if payload.Message != "" {
+			return payload.Message
+		}
+		switch value := payload.Error.(type) {
+		case string:
+			return value
+		case map[string]any:
+			if message, ok := value["message"].(string); ok {
+				return message
+			}
+			if code, ok := value["code"].(string); ok {
+				return code
+			}
+		}
+	}
+	text := strings.TrimSpace(string(body))
+	if len(text) > 180 {
+		return text[:180]
+	}
+	return text
+}
+
+func MaskAPIKey(apiKey string) string {
+	trimmed := strings.TrimSpace(apiKey)
+	if trimmed == "" {
+		return ""
+	}
+	if len(trimmed) <= 7 {
+		return "****"
+	}
+	return trimmed[:3] + "..." + trimmed[len(trimmed)-4:]
 }

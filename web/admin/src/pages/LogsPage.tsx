@@ -181,7 +181,7 @@ export function LogsPage() {
               className="form-control"
               value={providerFilter}
               onChange={(e) => setProviderFilter(e.target.value)}
-              placeholder="筛选厂商"
+              placeholder="筛选供应商"
             />
             <input
               className="form-control"
@@ -300,7 +300,7 @@ export function LogsPage() {
               <div className="flex-col gap-2">
                 {[
                   { label: "时间", value: new Date(active.created_at).toLocaleString() },
-                  { label: "厂商", value: active.provider_id },
+                  { label: "供应商", value: active.provider_id },
                   { label: "延迟", value: `${active.latency_ms}ms` },
                   { label: "状态", value: `${active.status_label} (${active.status_code})` },
                   { label: "Trace", value: active.trace_id || "暂无" }

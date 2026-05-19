@@ -1,4 +1,4 @@
-export namespace main {
+export namespace desktop {
 	
 	export class AIStatsWidgetState {
 	    open: boolean;

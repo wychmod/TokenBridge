@@ -33,6 +33,19 @@ type Notice = {
   tone: NoticeTone;
 };
 
+export type ProviderTestResult = {
+  status: string;
+  latency_ms: number;
+  models?: string[];
+  message: string;
+};
+
+export type ProviderModelDiscoveryResult = {
+  ok: boolean;
+  models: string[];
+  error?: string;
+};
+
 type AdminState = {
   providers: ProviderRecord[];
   keys: LocalKeyRecord[];
@@ -55,8 +68,10 @@ type AdminState = {
   saveProvider: (record: ProviderRecord) => Promise<void>;
   deleteProvider: (id: string) => Promise<void>;
   reorderProviders: (ids: string[]) => Promise<void>;
-  testProvider: (id: string) => Promise<void>;
+  testProvider: (id: string) => Promise<ProviderTestResult>;
+  testProviderDraft: (record: ProviderRecord) => Promise<ProviderTestResult>;
   discoverProviderModels: (id: string) => Promise<string[]>;
+  discoverProviderModelsDraft: (record: ProviderRecord) => Promise<ProviderModelDiscoveryResult>;
   saveKey: (record: LocalKeyRecord) => Promise<void>;
   rotateKey: (id: string) => Promise<void>;
   revokeKey: (id: string) => Promise<void>;
@@ -102,7 +117,7 @@ export const useAdminStore = create<AdminState>((set, get) => ({
   reloadProviders: async () => {
     const result = await api.get<ProviderApiRecord[]>("/providers");
     if (!result.ok || !result.data) {
-      get().pushNotice({ tone: "warning", title: "厂商列表加载失败", message: result.error ?? "无法读取后端厂商配置。" });
+      get().pushNotice({ tone: "warning", title: "供应商列表加载失败", message: result.error ?? "无法读取后端供应商配置。" });
       return;
     }
     const providers = result.data.map(mapProviderFromApi);
@@ -158,41 +173,48 @@ export const useAdminStore = create<AdminState>((set, get) => ({
       ? await api.put<ProviderApiRecord>(`/providers/${record.id}`, payload)
       : await api.post<ProviderApiRecord>("/providers", payload);
     if (!result.ok || !result.data) {
-      get().pushNotice({ tone: "warning", title: "厂商保存失败", message: result.error ?? "后端未接受当前厂商配置。" });
+      get().pushNotice({ tone: "warning", title: "供应商保存失败", message: result.error ?? "后端未接受当前供应商配置。" });
       return;
     }
     const saved = mapProviderFromApi(result.data);
     set((state) => ({ providers: upsert(state.providers, saved), selectedProviderId: saved.id }));
-    get().pushNotice({ tone: "success", title: "厂商配置已保存", message: `${saved.name} 已写入本地数据库。` });
+    get().pushNotice({ tone: "success", title: "供应商配置已保存", message: `${saved.name} 已写入本地数据库。` });
   },
   deleteProvider: async (id) => {
     const result = await api.delete<Record<string, unknown>>(`/providers/${id}`);
     if (!result.ok) {
-      get().pushNotice({ tone: "warning", title: "厂商删除失败", message: result.error ?? "后端未能删除当前厂商。" });
+      get().pushNotice({ tone: "warning", title: "供应商删除失败", message: result.error ?? "后端未能删除当前供应商。" });
       return;
     }
     set((state) => {
       const providers = state.providers.filter((item) => item.id !== id);
       return { providers, selectedProviderId: providers[0]?.id };
     });
-    get().pushNotice({ tone: "success", title: "厂商已删除", message: "该厂商配置已从本地数据库移除。" });
+    get().pushNotice({ tone: "success", title: "供应商已删除", message: "该供应商配置已从本地数据库移除。" });
   },
   reorderProviders: async (ids) => {
     const result = await api.post<Record<string, unknown>>("/providers/reorder", { ids });
     if (!result.ok) {
-      get().pushNotice({ tone: "warning", title: "厂商排序失败", message: result.error ?? "后端未能保存当前排序。" });
+      get().pushNotice({ tone: "warning", title: "供应商排序失败", message: result.error ?? "后端未能保存当前排序。" });
       return;
     }
     await get().reloadProviders();
-    get().pushNotice({ tone: "success", title: "厂商排序已保存", message: "新的模型厂商优先级已经生效。" });
+    get().pushNotice({ tone: "success", title: "供应商排序已保存", message: "新的模型供应商优先级已经生效。" });
   },
   testProvider: async (id) => {
-    const result = await api.post<{ status: string; latency_ms: number; message: string }>(`/providers/${id}/test`);
+    const result = await api.post<ProviderTestResult>(`/providers/${id}/test`);
+    const data = result.ok && result.data ? result.data : failedProviderTestResult(result.error);
+    const healthy = result.ok && data.status === "healthy";
     get().pushNotice({
-      tone: result.ok ? "success" : "warning",
-      title: result.ok ? "连接测试完成" : "连接测试失败",
-      message: result.ok ? `${result.data?.message ?? "Provider 可访问"}，延迟 ${result.data?.latency_ms ?? 0} 毫秒。` : result.error ?? "测试请求失败。"
+      tone: healthy ? "success" : "warning",
+      title: healthy ? "连接测试通过" : "连接测试失败",
+      message: formatProviderTestMessage(data)
     });
+    return data;
+  },
+  testProviderDraft: async (record) => {
+    const result = await api.post<ProviderTestResult>("/providers/test", mapProviderToApi(record));
+    return result.ok && result.data ? result.data : failedProviderTestResult(result.error);
   },
   discoverProviderModels: async (id) => {
     const result = await api.post<string[]>(`/providers/${id}/discover-models`);
@@ -202,6 +224,13 @@ export const useAdminStore = create<AdminState>((set, get) => ({
     }
     get().pushNotice({ tone: "success", title: "模型发现完成", message: `共发现 ${result.data.length} 个模型。` });
     return result.data;
+  },
+  discoverProviderModelsDraft: async (record) => {
+    const result = await api.post<string[]>("/providers/discover-models", mapProviderToApi(record));
+    if (!result.ok || !result.data) {
+      return { ok: false, models: [], error: result.error ?? "无法读取模型列表。" };
+    }
+    return { ok: true, models: result.data };
   },
   saveKey: async (record) => {
     const payload = mapKeyToApi(record);
@@ -346,6 +375,19 @@ function nextNoticeId(createdAt: number): number {
   return createdAt * 1000 + noticeSequence;
 }
 
+function failedProviderTestResult(error?: string): ProviderTestResult {
+  return {
+    status: "warning",
+    latency_ms: 0,
+    message: error ?? "测试请求失败。"
+  };
+}
+
+function formatProviderTestMessage(result: ProviderTestResult): string {
+  const latency = Number.isFinite(result.latency_ms) ? result.latency_ms : 0;
+  return `${result.message || "连接测试已返回。"}，延迟 ${latency} 毫秒。`;
+}
+
 type ProviderApiRecord = {
   id: string;
   name: string;
@@ -358,6 +400,8 @@ type ProviderApiRecord = {
   models_json?: string;
   rate_limit_rpm?: number;
   rate_limit_tpm?: number;
+  has_api_key?: boolean;
+  api_key_masked?: string;
 };
 
 type KeyApiRecord = {
@@ -445,6 +489,11 @@ function mapProviderFromApi(record: ProviderApiRecord): ProviderRecord {
     type: normalizeProviderType(record.type),
     base_url: record.base_url,
     baseURL: record.base_url ?? "",
+    apiKey: "",
+    has_api_key: record.has_api_key,
+    hasApiKey: record.has_api_key ?? Boolean(record.api_key_masked),
+    api_key_masked: record.api_key_masked,
+    apiKeyMasked: record.api_key_masked,
     organization_id: record.organization_id,
     enabled: record.enabled ?? true,
     status: mapProviderStatus(record),
@@ -460,10 +509,11 @@ function mapProviderFromApi(record: ProviderApiRecord): ProviderRecord {
 
 function mapProviderToApi(record: ProviderRecord) {
   return {
+    id: record.id,
     name: record.name,
     type: normalizeProviderType(valueFromLabel(providerTypeLabelMap, record.type)),
     base_url: record.baseURL,
-    api_key: record.apiKey ?? "",
+    api_key: record.apiKey?.trim() ?? "",
     organization_id: record.organization_id ?? "",
     enabled: record.status !== "disabled" && record.enabled !== false,
     priority: record.priority,

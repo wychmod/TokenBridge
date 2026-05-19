@@ -57,7 +57,7 @@ import {
 
 const navItems = [
   { to: "/dashboard", label: "总览", icon: LayoutDashboard, group: "运行", description: "网关是否正常、花费多少、哪里需要处理" },
-  { to: "/providers", label: "Provider 接入", icon: Network, group: "配置", description: "上游厂商、模型、优先级和连接健康" },
+  { to: "/providers", label: "Provider 接入", icon: Network, group: "配置", description: "上游供应商、模型、优先级和连接健康" },
   { to: "/keys", label: "Local Keys", icon: KeyRound, group: "配置", description: "本地密钥、权限、预算、轮换和吊销" },
   { to: "/routing", label: "路由策略", icon: Route, group: "配置", description: "模型别名、主链路、Fallback 和路由模拟" },
   { to: "/analytics", label: "调用分析", icon: BarChart3, group: "观测", description: "请求量、成功率、成本和模型分布趋势" },
@@ -301,7 +301,7 @@ export function AppShell({ children }: PropsWithChildren) {
         <div className="sidebar-footer">
           <div className="flex items-center gap-2">
             <span className="status-indicator" style={{ background: healthyProviders > 0 ? "var(--accent)" : "var(--text-tertiary)", boxShadow: healthyProviders > 0 ? "0 0 6px var(--accent-glow)" : "none" }} />
-            <span>{healthyProviders}/{providers.length} 厂商在线</span>
+            <span>{healthyProviders}/{providers.length} 供应商在线</span>
           </div>
           <div className="flex items-center gap-2">
             <Sparkles size={13} />

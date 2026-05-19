@@ -205,12 +205,12 @@ export function AnalyticsPage() {
           <div className="section-header-main">
             <span className="eyebrow">维度拆分</span>
             <h3 className="section-title">
-              {breakdownMode === "provider" ? "厂商维度" : breakdownMode === "model" ? "模型维度" : "密钥维度"}
+              {breakdownMode === "provider" ? "供应商维度" : breakdownMode === "model" ? "模型维度" : "密钥维度"}
             </h3>
           </div>
           <div className="section-actions">
             <div className="tabs">
-              <button type="button" className={clsx("tab", breakdownMode === "provider" && "active")} onClick={() => setBreakdownMode("provider")}>厂商</button>
+              <button type="button" className={clsx("tab", breakdownMode === "provider" && "active")} onClick={() => setBreakdownMode("provider")}>供应商</button>
               <button type="button" className={clsx("tab", breakdownMode === "model" && "active")} onClick={() => setBreakdownMode("model")}>模型</button>
               <button type="button" className={clsx("tab", breakdownMode === "key" && "active")} onClick={() => setBreakdownMode("key")}>密钥</button>
             </div>

@@ -5,6 +5,10 @@ export type ProviderRecord = {
   base_url?: string;
   baseURL: string;
   apiKey?: string;
+  has_api_key?: boolean;
+  hasApiKey?: boolean;
+  api_key_masked?: string;
+  apiKeyMasked?: string;
   organization_id?: string;
   enabled: boolean;
   status: "healthy" | "warning" | "disabled" | "active" | string;

@@ -86,6 +86,8 @@ func (r *Router) mount() {
 		adminRouter.Get("/providers", r.handleProviders)
 		adminRouter.Get("/providers/types", r.handleProviderTypes)
 		adminRouter.Post("/providers", r.handleCreateProvider)
+		adminRouter.Post("/providers/test", r.handleTestProviderDraft)
+		adminRouter.Post("/providers/discover-models", r.handleDiscoverModelsDraft)
 		adminRouter.Put("/providers/{id}", r.handleUpdateProvider)
 		adminRouter.Delete("/providers/{id}", r.handleDeleteProvider)
 		adminRouter.Post("/providers/{id}/test", r.handleTestProvider)

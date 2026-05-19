@@ -138,7 +138,7 @@ export function DashboardPage() {
     if (unhealthyProviders?.length) {
       items.push({
         level: "danger",
-        title: `${unhealthyProviders.length} 家厂商异常`,
+        title: `${unhealthyProviders.length} 家供应商异常`,
         message: unhealthyProviders.map((p) => p.message).join("；")
       });
     }
@@ -360,8 +360,8 @@ export function DashboardPage() {
                 key={dot.id}
                 className="flex-col items-center gap-1"
                 style={{ cursor: "pointer" }}
-                title={`${dot.path}\n厂商: ${dot.provider}\n延迟: ${dot.latency}ms`}
-                aria-label={`${dot.path}，厂商 ${dot.provider}，延迟 ${dot.latency}ms`}
+                title={`${dot.path}\n供应商: ${dot.provider}\n延迟: ${dot.latency}ms`}
+                aria-label={`${dot.path}，供应商 ${dot.provider}，延迟 ${dot.latency}ms`}
               >
                 <div
                   style={{

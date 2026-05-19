@@ -57,7 +57,7 @@ export function BootstrapPage() {
         <SectionHeader eyebrow="初始化状态" title="当前运行基线" description="这里读取当前真实管理状态，不再使用独立演示数据。" />
         <div className="status-grid">
           <div className="metric-pill"><ShieldCheck size={16} /> 管理员账号：{settings.adminUsername || "未配置"}</div>
-          <div className="metric-pill"><Sparkles size={16} /> 可用厂商：{enabledProviders}/{providers.length}</div>
+          <div className="metric-pill"><Sparkles size={16} /> 可用供应商：{enabledProviders}/{providers.length}</div>
           <div className="metric-pill">可用密钥：{activeKeys}/{keys.length}</div>
           <div className="metric-pill">主题策略：{settings.theme}</div>
         </div>

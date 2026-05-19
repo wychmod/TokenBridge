@@ -18,7 +18,7 @@ export const statCards = [
     tone: "sky"
   },
   {
-    title: "可用厂商",
+    title: "可用供应商",
     value: "8 家",
     delta: "+2",
     tone: "amber"
@@ -49,7 +49,7 @@ export const alertFeed = [
 ];
 
 export const quickActions = [
-  "新增厂商",
+  "新增供应商",
   "新建本地密钥",
   "执行路由测试",
   "打开便携版打包",

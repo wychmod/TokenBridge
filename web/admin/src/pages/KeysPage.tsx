@@ -72,11 +72,11 @@ export function KeysPage() {
 
   const handleSave = async () => {
     if (selectedProviders.length === 0) {
-      pushNotice({ tone: "warning", title: "请选择厂商", message: "本地 API 需要绑定至少一个允许厂商。" });
+      pushNotice({ tone: "warning", title: "请选择供应商", message: "本地 API 需要绑定至少一个允许供应商。" });
       return;
     }
     if (selectedModels.length === 0) {
-      pushNotice({ tone: "warning", title: "请选择模型", message: "本地 API 需要绑定至少一个所选厂商支持的模型。" });
+      pushNotice({ tone: "warning", title: "请选择模型", message: "本地 API 需要绑定至少一个所选供应商支持的模型。" });
       return;
     }
     setBusyAction("save");
@@ -258,7 +258,7 @@ export function KeysPage() {
                 </div>
 
                 <div className="form-field span-2">
-                  <label className="form-label">允许厂商</label>
+                  <label className="form-label">允许供应商</label>
                   <select
                     className="form-control"
                     multiple
@@ -279,7 +279,7 @@ export function KeysPage() {
                       <option key={p} value={p}>{p}</option>
                     ))}
                   </select>
-                  <span className="form-hint">{providerOptions.length ? "按住 Ctrl 可选择多个厂商" : "请先到厂商接入页面新增厂商"}</span>
+                  <span className="form-hint">{providerOptions.length ? "按住 Ctrl 可选择多个供应商" : "请先到供应商接入页面新增供应商"}</span>
                 </div>
 
                 <div className="form-field span-2">
@@ -301,7 +301,7 @@ export function KeysPage() {
                       <option key={m} value={m}>{m}</option>
                     ))}
                   </select>
-                  <span className="form-hint">{modelOptions.length ? "模型来自已选厂商的模型配置" : "请先选择带有模型配置的厂商"}</span>
+                  <span className="form-hint">{modelOptions.length ? "模型来自已选供应商的模型配置" : "请先选择带有模型配置的供应商"}</span>
                 </div>
 
                 <div className="form-field">
