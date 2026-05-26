@@ -25,6 +25,8 @@ type ModelPricing = {
   supports_vision: boolean;
   supports_function_calling: boolean;
   supports_prompt_caching: boolean;
+  supports_reasoning: boolean;
+  pricing_json: string;
   fetched_at: string;
 };
 
@@ -73,11 +75,29 @@ export function PricingPage() {
   const [estModel, setEstModel] = useState("");
   const [estInput, setEstInput] = useState(1000);
   const [estOutput, setEstOutput] = useState(500);
+  const [estCacheCreation, setEstCacheCreation] = useState(0);
+  const [estCacheRead, setEstCacheRead] = useState(0);
+  const [estReasoning, setEstReasoning] = useState(0);
+  const [estContextWindow, setEstContextWindow] = useState(0);
+  const [estPricingTier, setEstPricingTier] = useState("");
   const [estResult, setEstResult] = useState<{
     model_id: string;
     input_tokens: number;
     output_tokens: number;
+    cache_creation_tokens: number;
+    cache_read_tokens: number;
+    reasoning_tokens: number;
+    context_window: number;
+    pricing_tier: string;
     estimated_usd: number;
+    cost_breakdown: {
+      input_usd: number;
+      output_usd: number;
+      cache_creation_usd: number;
+      cache_read_usd: number;
+      reasoning_usd: number;
+      total_usd: number;
+    };
     matched: boolean;
     fallback_used: boolean;
     fallback_model: string;
@@ -153,7 +173,12 @@ export function PricingPage() {
       const params = new URLSearchParams({
         model: estModel.trim(),
         input_tokens: String(estInput),
-        output_tokens: String(estOutput)
+        output_tokens: String(estOutput),
+        cache_creation_tokens: String(estCacheCreation),
+        cache_read_tokens: String(estCacheRead),
+        reasoning_tokens: String(estReasoning),
+        context_window: String(estContextWindow),
+        pricing_tier: estPricingTier.trim()
       });
       const res = await fetch(`/admin/api/pricing/estimate?${params}`);
       const data = await res.json();
@@ -178,6 +203,7 @@ export function PricingPage() {
   const providerCount = useMemo(() => new Set(models.map((model) => model.litellm_provider).filter(Boolean)).size, [models]);
   const visionCount = filteredModels.filter((model) => model.supports_vision).length;
   const functionCount = filteredModels.filter((model) => model.supports_function_calling).length;
+  const reasoningCount = filteredModels.filter((model) => model.supports_reasoning).length;
   const cacheCount = filteredModels.filter((model) => hasCachePricing(model)).length;
   const activeModeLabel = modeOptions.find((option) => option.value === modeFilter)?.label ?? "全部";
 
@@ -219,8 +245,8 @@ export function PricingPage() {
     },
     {
       label: "能力覆盖",
-      value: `${visionCount}/${functionCount}`,
-      detail: "视觉 / 函数调用",
+      value: `${visionCount}/${functionCount}/${reasoningCount}`,
+      detail: "视觉 / 函数 / 推理",
       tone: "amber",
       icon: CheckCircle
     },
@@ -355,6 +381,7 @@ export function PricingPage() {
                           <td className="pricing-context-cell">
                             <strong>{formatTokens(model.max_input_tokens)}</strong>
                             <span>{formatTokens(model.max_output_tokens)} 输出</span>
+                            <span>{pricingTierSummary(model.pricing_json)}</span>
                           </td>
                           <td className="numeric price-cell">{fmtCost(model.input_cost_per_token)}</td>
                           <td className="numeric price-cell output">{fmtCost(model.output_cost_per_token)}</td>
@@ -373,7 +400,8 @@ export function PricingPage() {
                               {model.supports_vision && <span className="pricing-capability positive"><Eye size={12} />视觉</span>}
                               {model.supports_function_calling && <span className="pricing-capability info"><CheckCircle size={12} />函数</span>}
                               {model.supports_prompt_caching && <span className="pricing-capability amber"><Database size={12} />缓存</span>}
-                              {!model.supports_vision && !model.supports_function_calling && !model.supports_prompt_caching && (
+                              {model.supports_reasoning && <span className="pricing-capability info"><CheckCircle size={12} />推理</span>}
+                              {!model.supports_vision && !model.supports_function_calling && !model.supports_prompt_caching && !model.supports_reasoning && (
                                 <span className="pricing-muted">基础</span>
                               )}
                             </div>
@@ -449,6 +477,26 @@ export function PricingPage() {
               <label className="form-label">输出 Tokens</label>
               <input className="form-control" type="number" min={0} value={estOutput} onChange={(e) => setEstOutput(Number(e.target.value))} />
             </div>
+            <div className="form-field">
+              <label className="form-label">Cache write</label>
+              <input className="form-control" type="number" min={0} value={estCacheCreation} onChange={(e) => setEstCacheCreation(Number(e.target.value))} />
+            </div>
+            <div className="form-field">
+              <label className="form-label">Cache read</label>
+              <input className="form-control" type="number" min={0} value={estCacheRead} onChange={(e) => setEstCacheRead(Number(e.target.value))} />
+            </div>
+            <div className="form-field">
+              <label className="form-label">Reasoning Tokens</label>
+              <input className="form-control" type="number" min={0} value={estReasoning} onChange={(e) => setEstReasoning(Number(e.target.value))} />
+            </div>
+            <div className="form-field">
+              <label className="form-label">Context window</label>
+              <input className="form-control" type="number" min={0} placeholder="auto" value={estContextWindow} onChange={(e) => setEstContextWindow(Number(e.target.value))} />
+            </div>
+            <div className="form-field">
+              <label className="form-label">Tier / effort</label>
+              <input className="form-control" placeholder="priority / high" value={estPricingTier} onChange={(e) => setEstPricingTier(e.target.value)} />
+            </div>
             <button type="button" className="btn btn-primary btn-sm" onClick={handleEstimate}>
               <DollarSign size={14} /> 估算
             </button>
@@ -466,6 +514,9 @@ export function PricingPage() {
                 <MetricTile label="预估费用" value={fmtUSD(estResult.estimated_usd)} tone="strong" />
                 <MetricTile label="输入 Tokens" value={estResult.input_tokens.toLocaleString()} />
                 <MetricTile label="输出 Tokens" value={estResult.output_tokens.toLocaleString()} />
+                <MetricTile label="Cache read/write" value={`${estResult.cache_read_tokens.toLocaleString()} / ${estResult.cache_creation_tokens.toLocaleString()}`} />
+                <MetricTile label="Reasoning" value={`${estResult.reasoning_tokens.toLocaleString()} tokens · ${fmtUSD(estResult.cost_breakdown?.reasoning_usd ?? 0)}`} />
+                <MetricTile label="Context / tier" value={`${formatTokens(estResult.context_window)} / ${estResult.pricing_tier || "base"}`} />
                 <MetricTile label="匹配状态" value={estResult.matched ? "精确匹配" : "兜底"} />
               </div>
             </div>
@@ -507,6 +558,8 @@ function PricingLookupResult({ result, fmtCost }: { result: LookupResult; fmtCos
         <MetricTile label="输出价格" value={`${fmtCost(result.data.output_cost_per_token)} /M`} />
         {result.data.max_input_tokens > 0 && <MetricTile label="最大输入" value={formatTokens(result.data.max_input_tokens)} />}
         {result.data.max_output_tokens > 0 && <MetricTile label="最大输出" value={formatTokens(result.data.max_output_tokens)} />}
+        <MetricTile label="推理支持" value={result.data.supports_reasoning ? "支持" : "未标注"} />
+        <MetricTile label="分段价" value={pricingTierSummary(result.data.pricing_json)} />
       </div>
     </div>
   );
@@ -534,6 +587,26 @@ function formatTokens(value: number) {
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(value % 1_000_000 === 0 ? 0 : 1)}M`;
   if (value >= 1_000) return `${(value / 1_000).toFixed(value % 1_000 === 0 ? 0 : 1)}K`;
   return value.toLocaleString();
+}
+
+function pricingTierSummary(raw: string) {
+  if (!raw) return "base tier";
+  try {
+    const data = JSON.parse(raw) as Record<string, unknown>;
+    const keys = Object.keys(data);
+    const contextTiers = Array.from(new Set(keys.flatMap((key) => {
+      const match = key.match(/above_(\d+k)_tokens/i);
+      return match ? [match[1]] : [];
+    })));
+    const serviceTiers = Array.from(new Set(keys.flatMap((key) => {
+      const match = key.match(/_(priority|flex|minimal|low|medium|high|xhigh|none)$/i);
+      return match ? [match[1]] : [];
+    })));
+    const parts = [...contextTiers, ...serviceTiers];
+    return parts.length ? parts.slice(0, 3).join(" / ") : "base tier";
+  } catch {
+    return "base tier";
+  }
 }
 
 function hasCachePricing(model: ModelPricing) {

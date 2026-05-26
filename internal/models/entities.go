@@ -67,18 +67,28 @@ type Setting struct {
 }
 
 type UsageRecord struct {
-	ID             string    `json:"id" gorm:"primaryKey"`
-	LocalKeyID     string    `json:"local_key_id"`
-	ProviderID     string    `json:"provider_id"`
-	ModelRequested string    `json:"model_requested"`
-	ModelActual    string    `json:"model_actual"`
-	APIFormat      string    `json:"api_format"`
-	InputTokens    int64     `json:"input_tokens"`
-	OutputTokens   int64     `json:"output_tokens"`
-	TotalCostUSD   float64   `json:"total_cost_usd"`
-	LatencyMS      int64     `json:"latency_ms"`
-	Success        bool      `json:"success"`
-	CreatedAt      time.Time `json:"created_at"`
+	ID                  string    `json:"id" gorm:"primaryKey"`
+	LocalKeyID          string    `json:"local_key_id"`
+	ProviderID          string    `json:"provider_id"`
+	ModelRequested      string    `json:"model_requested"`
+	ModelActual         string    `json:"model_actual"`
+	APIFormat           string    `json:"api_format"`
+	InputTokens         int64     `json:"input_tokens"`
+	OutputTokens        int64     `json:"output_tokens"`
+	CacheCreationTokens int64     `json:"cache_creation_tokens"`
+	CacheReadTokens     int64     `json:"cache_read_tokens"`
+	ReasoningTokens     int64     `json:"reasoning_tokens"`
+	ContextWindow       int64     `json:"context_window"`
+	PricingTier         string    `json:"pricing_tier"`
+	TotalCostUSD        float64   `json:"total_cost_usd"`
+	CostBreakdownJSON   string    `json:"cost_breakdown_json"`
+	PricingRuleJSON     string    `json:"pricing_rule_json"`
+	TimeSource          string    `json:"time_source"`
+	EventKey            string    `json:"event_key" gorm:"index"`
+	ParserVersion       int       `json:"parser_version"`
+	LatencyMS           int64     `json:"latency_ms"`
+	Success             bool      `json:"success"`
+	CreatedAt           time.Time `json:"created_at"`
 }
 
 type RequestLog struct {
@@ -107,6 +117,8 @@ type ModelPricing struct {
 	SupportsVision            bool      `json:"supports_vision"`
 	SupportsFunctionCalling   bool      `json:"supports_function_calling"`
 	SupportsPromptCaching     bool      `json:"supports_prompt_caching"`
+	SupportsReasoning         bool      `json:"supports_reasoning"`
+	PricingJSON               string    `json:"pricing_json"`
 	FetchedAt                 time.Time `json:"fetched_at"`
 }
 
@@ -122,12 +134,20 @@ type AICodingUsageRecord struct {
 	OutputTokens        int64     `json:"output_tokens"`
 	CacheCreationTokens int64     `json:"cache_creation_tokens"`
 	CacheReadTokens     int64     `json:"cache_read_tokens"`
+	ReasoningTokens     int64     `json:"reasoning_tokens"`
+	ContextWindow       int64     `json:"context_window"`
+	PricingTier         string    `json:"pricing_tier"`
 	TotalTokens         int64     `json:"total_tokens"`
 	TotalCostUSD        float64   `json:"total_cost_usd"`
+	CostBreakdownJSON   string    `json:"cost_breakdown_json"`
+	PricingRuleJSON     string    `json:"pricing_rule_json"`
 	PricingMatched      bool      `json:"pricing_matched"`
 	PricingFallback     string    `json:"pricing_fallback"`
+	EventKey            string    `json:"event_key" gorm:"index"`
 	SourcePath          string    `json:"source_path" gorm:"index"`
 	SourceOffset        int64     `json:"source_offset"`
+	TimeSource          string    `json:"time_source"`
+	ParserVersion       int       `json:"parser_version"`
 	RawJSON             string    `json:"raw_json"`
 	OccurredAt          time.Time `json:"occurred_at" gorm:"index"`
 	CreatedAt           time.Time `json:"created_at"`

@@ -224,6 +224,202 @@ func TestScanFileAppendOnlyCreatesNewRows(t *testing.T) {
 	}
 }
 
+func TestScanFileDedupesRepeatedCodexTokenCountSnapshots(t *testing.T) {
+	db := openTestDB(t)
+	priceService := pricing.NewService(db, zerolog.Nop())
+	now := time.Date(2026, 5, 12, 10, 0, 0, 0, time.UTC)
+	svc := NewService(db, priceService, zerolog.Nop())
+	svc.nowFunc = func() time.Time { return now }
+
+	db.Create(&models.ModelPricing{
+		ModelID:            "gpt-5.5",
+		Mode:               "chat",
+		InputCostPerToken:  1.0 / 1_000_000,
+		OutputCostPerToken: 2.0 / 1_000_000,
+		FetchedAt:          now,
+	})
+
+	path := filepath.Join(t.TempDir(), "codex.jsonl")
+	duplicateSnapshot := `{"timestamp":"2026-05-12T04:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1000,"cached_input_tokens":500,"output_tokens":100,"total_tokens":1100},"last_token_usage":{"input_tokens":1000,"cached_input_tokens":500,"output_tokens":100,"total_tokens":1100}}}}`
+	body := `{"timestamp":"2026-05-12T03:59:00Z","type":"turn_context","payload":{"cwd":"D:\\idea\\tokenbridge","model":"gpt-5.5","session_id":"s1"}}` + "\n" +
+		duplicateSnapshot + "\n" +
+		strings.Replace(duplicateSnapshot, "04:00:00Z", "04:00:05Z", 1) + "\n" +
+		`{"timestamp":"2026-05-12T04:01:00Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":2200,"cached_input_tokens":1500,"output_tokens":300,"total_tokens":2500},"last_token_usage":{"input_tokens":1200,"cached_input_tokens":1000,"output_tokens":200,"total_tokens":1400}}}}` + "\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, found, created, err := svc.scanFile(context.Background(), logCandidate{tool: "Codex", path: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found != 3 || created != 2 {
+		t.Fatalf("expected 3 parsed snapshots but only 2 created usage rows, found=%d created=%d", found, created)
+	}
+	var count int64
+	db.Model(&models.AICodingUsageRecord{}).Count(&count)
+	if count != 2 {
+		t.Fatalf("expected duplicate token_count snapshot to be stored once, got %d rows", count)
+	}
+}
+
+func TestScanFileUsesFileModTimeWhenUsageTimestampMissing(t *testing.T) {
+	db := openTestDB(t)
+	priceService := pricing.NewService(db, zerolog.Nop())
+	scanTime := time.Date(2026, 5, 20, 1, 0, 0, 0, time.Local)
+	fileTime := time.Date(2026, 5, 9, 23, 59, 0, 0, time.Local)
+	svc := NewService(db, priceService, zerolog.Nop())
+	svc.nowFunc = func() time.Time { return scanTime }
+
+	path := filepath.Join(t.TempDir(), "trace.json")
+	body := `{"model":"MiniMax-M2.7","usage":{"input_tokens":1000,"output_tokens":200,"total_tokens":1200},"session_id":"s1"}`
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(path, fileTime, fileTime); err != nil {
+		t.Fatal(err)
+	}
+
+	_, found, created, err := svc.scanFile(context.Background(), logCandidate{tool: "WorkBuddy", path: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found != 1 || created != 1 {
+		t.Fatalf("expected one usage row, found=%d created=%d", found, created)
+	}
+	var row models.AICodingUsageRecord
+	if err := db.First(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !row.OccurredAt.Equal(fileTime) {
+		t.Fatalf("expected missing usage timestamp to fall back to file modtime %s, got %s", fileTime, row.OccurredAt)
+	}
+}
+
+func TestScanFileDedupesWorkBuddyRawUsageByProviderMessage(t *testing.T) {
+	db := openTestDB(t)
+	priceService := pricing.NewService(db, zerolog.Nop())
+	now := time.Date(2026, 5, 20, 10, 0, 0, 0, time.UTC)
+	svc := NewService(db, priceService, zerolog.Nop())
+	svc.nowFunc = func() time.Time { return now }
+
+	path := filepath.Join(t.TempDir(), "workbuddy.jsonl")
+	first := `{"id":"resp_a","timestamp":1778426956835,"type":"function_call","providerData":{"messageId":"msg_1","traceId":"trace_1","conversationRequestId":"conv_1","model":"gpt-5.5","rawUsage":{"prompt_tokens":30144,"completion_tokens":550,"total_tokens":30694,"prompt_tokens_details":{"cached_tokens":28672},"completion_tokens_details":{"reasoning_tokens":128}}}}`
+	second := strings.Replace(first, `"resp_a"`, `"resp_b"`, 1)
+	if err := os.WriteFile(path, []byte(first+"\n"+second+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, found, created, err := svc.scanFile(context.Background(), logCandidate{tool: "WorkBuddy", path: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found != 2 || created != 1 {
+		t.Fatalf("expected duplicate WorkBuddy rawUsage to create one row, found=%d created=%d", found, created)
+	}
+	var row models.AICodingUsageRecord
+	if err := db.First(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	if row.ReasoningTokens != 128 || row.EventKey == "" {
+		t.Fatalf("expected reasoning tokens and stable event key, got %+v", row)
+	}
+}
+
+func TestScanFileDedupesStableEventKeyAcrossSources(t *testing.T) {
+	db := openTestDB(t)
+	priceService := pricing.NewService(db, zerolog.Nop())
+	now := time.Date(2026, 5, 20, 10, 0, 0, 0, time.UTC)
+	svc := NewService(db, priceService, zerolog.Nop())
+	svc.nowFunc = func() time.Time { return now }
+
+	firstPath := filepath.Join(t.TempDir(), "workbuddy-a.jsonl")
+	secondPath := filepath.Join(t.TempDir(), "workbuddy-b.jsonl")
+	event := `{"timestamp":"2026-05-20T10:00:00Z","providerData":{"messageId":"msg_same","model":"gpt-5.5","rawUsage":{"prompt_tokens":1000,"completion_tokens":100,"total_tokens":1100}}}`
+	if err := os.WriteFile(firstPath, []byte(event+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(secondPath, []byte(event+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, found, created, err := svc.scanFile(context.Background(), logCandidate{tool: "WorkBuddy", path: firstPath}); err != nil || found != 1 || created != 1 {
+		t.Fatalf("first scan found=%d created=%d err=%v", found, created, err)
+	}
+	if _, found, created, err := svc.scanFile(context.Background(), logCandidate{tool: "WorkBuddy", path: secondPath}); err != nil || found != 1 || created != 0 {
+		t.Fatalf("second scan should upsert the same event key, found=%d created=%d err=%v", found, created, err)
+	}
+
+	var count int64
+	db.Model(&models.AICodingUsageRecord{}).Count(&count)
+	if count != 1 {
+		t.Fatalf("expected same tool + event_key to be stored once across sources, got %d rows", count)
+	}
+	groups, duplicates := svc.duplicateAudit(context.Background())
+	if groups != 0 || duplicates != 0 {
+		t.Fatalf("expected duplicate audit to be clean, groups=%d duplicates=%d", groups, duplicates)
+	}
+}
+
+func TestCleanupStoredRecordsDropsExistingDuplicateEventKeys(t *testing.T) {
+	db := openTestDB(t)
+	svc := NewService(db, pricing.NewService(db, zerolog.Nop()), zerolog.Nop())
+	now := time.Date(2026, 5, 20, 10, 0, 0, 0, time.UTC)
+	rows := []models.AICodingUsageRecord{
+		{ID: "old", Tool: "Codex", EventKey: "same-event", TotalTokens: 100, OccurredAt: now.Add(-time.Minute), CreatedAt: now.Add(-time.Minute)},
+		{ID: "new", Tool: "Codex", EventKey: "same-event", TotalTokens: 200, OccurredAt: now, CreatedAt: now},
+	}
+	if err := db.Create(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	dropped := svc.cleanupStoredRecords(context.Background())
+	if dropped == 0 {
+		t.Fatal("expected cleanup to drop older duplicate event_key row")
+	}
+
+	var remaining []models.AICodingUsageRecord
+	if err := db.Find(&remaining).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(remaining) != 1 || remaining[0].ID != "new" {
+		t.Fatalf("expected highest-token duplicate to remain, got %+v", remaining)
+	}
+}
+
+func TestParseUsageFileTreatsNaiveTimestampAsBeijingTime(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "usage.jsonl")
+	body := `{"model":"gpt-5","usage":{"input_tokens":100,"output_tokens":20,"total_tokens":120},"timestamp":"2026-05-20 00:30:00"}` + "\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	records, err := parseUsageFile("WorkBuddy", path, time.Date(2026, 5, 21, 1, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(records) != 1 {
+		t.Fatalf("expected one record, got %d", len(records))
+	}
+	wantUTC := time.Date(2026, 5, 19, 16, 30, 0, 0, time.UTC)
+	if !records[0].OccurredAt.Equal(wantUTC) || records[0].TimeSource != "timestamp" {
+		t.Fatalf("expected Beijing naive timestamp to become %s, got %s source=%s", wantUTC, records[0].OccurredAt, records[0].TimeSource)
+	}
+}
+
+func TestIsLogFileRejectsGenericHistoryJSON(t *testing.T) {
+	if isLogFile(filepath.Join("C:\\Users\\me\\AppData\\Roaming\\Qoder\\User\\History\\-abc", "5g4e.json")) {
+		t.Fatal("generic history JSON should not be treated as a usage log")
+	}
+	if !isLogFile(filepath.Join("C:\\Users\\me\\.workbuddy", "usage.json")) {
+		t.Fatal("explicit usage JSON should still be treated as a usage log")
+	}
+	if !isLogFile(filepath.Join("C:\\Users\\me\\.codex", "history.jsonl")) {
+		t.Fatal("JSONL history logs should still be scanned")
+	}
+}
+
 func TestScanFileRewriteReplacesStaleSourceRows(t *testing.T) {
 	db := openTestDB(t)
 	priceService := pricing.NewService(db, zerolog.Nop())

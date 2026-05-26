@@ -36,8 +36,10 @@ type Summary = {
   output_tokens: number;
   cache_creation_tokens: number;
   cache_read_tokens: number;
+  reasoning_tokens: number;
   cache_hit_rate: number;
   pricing_fallbacks: number;
+  time_fallbacks: number;
   scanned_sources: number;
   last_scan: string;
 };
@@ -51,9 +53,18 @@ type Breakdown = {
   input_tokens: number;
   output_tokens: number;
   cache_read_tokens: number;
+  reasoning_tokens: number;
   cache_hit_rate: number;
   pricing_fallbacks: number;
   last_seen?: string;
+};
+
+type ScanResult = {
+  records_created: number;
+  duplicate_groups: number;
+  dropped_records: number;
+  time_fallback_records: number;
+  pricing_fallbacks: number;
 };
 
 type DashboardPayload = {
@@ -64,7 +75,7 @@ type DashboardPayload = {
   project_spend: Breakdown[];
   tool_breakdown: Breakdown[];
   sources: Array<{ tool: string; path: string; records_found: number; records_created: number; last_scanned_at: string; error_message: string }>;
-  recent: Array<{ id: string; tool: string; model: string; project_name: string; total_cost_usd: number; total_tokens: number; occurred_at: string }>;
+  recent: Array<{ id: string; tool: string; model: string; project_name: string; total_cost_usd: number; total_tokens: number; reasoning_tokens: number; context_window: number; pricing_tier: string; time_source: string; occurred_at: string }>;
 };
 
 const toolColors = ["#66c7b8", "#79afd9", "#d9ad63", "#df7c86", "#8abf72", "#b89ce8"];
@@ -81,6 +92,7 @@ export function AIToolUsagePage() {
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [scanResult, setScanResult] = useState<ScanResult | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -156,12 +168,13 @@ export function AIToolUsagePage() {
 
   const scanNow = async () => {
     setScanning(true);
-    const result = await api.post<{ records_created: number }>("/ai-tool-usage/scan");
+    const result = await api.post<ScanResult>("/ai-tool-usage/scan");
     setScanning(false);
     if (!result.ok) {
       setError(result.error ?? "扫描失败");
       return;
     }
+    setScanResult(result.data ?? null);
     await load();
   };
 
@@ -246,17 +259,17 @@ export function AIToolUsagePage() {
         <article className="kpi-card ai-kpi">
           <span className="kpi-label">总请求数</span>
           <span className="kpi-value">{(summary?.total_requests ?? 0).toLocaleString()}</span>
-          <span className="kpi-delta">{(summary?.total_tokens ?? 0).toLocaleString()} tokens</span>
+          <span className="kpi-delta">{(summary?.total_tokens ?? 0).toLocaleString()} tokens · {(summary?.reasoning_tokens ?? 0).toLocaleString()} reasoning</span>
         </article>
         <article className="kpi-card ai-kpi">
           <span className="kpi-label">缓存命中率</span>
           <span className="kpi-value">{((summary?.cache_hit_rate ?? 0) * 100).toFixed(1)}%</span>
-          <span className="kpi-delta">{(summary?.cache_read_tokens ?? 0).toLocaleString()} cache-read tokens</span>
+          <span className="kpi-delta">{(summary?.cache_read_tokens ?? 0).toLocaleString()} read · {(summary?.cache_creation_tokens ?? 0).toLocaleString()} write</span>
         </article>
         <article className="kpi-card ai-kpi">
           <span className="kpi-label">日志源</span>
           <span className="kpi-value">{(summary?.scanned_sources ?? 0).toLocaleString()}</span>
-          <span className="kpi-delta">fallback 计价 {summary?.pricing_fallbacks ?? 0} 条</span>
+          <span className="kpi-delta">pricing fallback {summary?.pricing_fallbacks ?? 0} · time fallback {summary?.time_fallbacks ?? 0}</span>
         </article>
       </section>
 
@@ -439,6 +452,11 @@ export function AIToolUsagePage() {
             </div>
           ))}
         </div>
+        {scanResult && (
+          <p className="chart-note">
+            Last scan audit: created {scanResult.records_created.toLocaleString()} · duplicate groups {scanResult.duplicate_groups.toLocaleString()} · dropped {scanResult.dropped_records.toLocaleString()} · time fallback {scanResult.time_fallback_records.toLocaleString()} · pricing fallback {scanResult.pricing_fallbacks.toLocaleString()}
+          </p>
+        )}
       </section>
 
     </div>

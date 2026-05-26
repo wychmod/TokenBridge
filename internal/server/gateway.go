@@ -40,11 +40,12 @@ func (e *gatewayError) Error() string {
 }
 
 type openAIChatResponse struct {
-	ID      string `json:"id"`
-	Object  string `json:"object"`
-	Created int64  `json:"created"`
-	Model   string `json:"model"`
-	Choices []struct {
+	ID          string `json:"id"`
+	Object      string `json:"object"`
+	Created     int64  `json:"created"`
+	Model       string `json:"model"`
+	ServiceTier string `json:"service_tier"`
+	Choices     []struct {
 		Index   int `json:"index"`
 		Message struct {
 			Role    string `json:"role"`
@@ -53,9 +54,16 @@ type openAIChatResponse struct {
 		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
 	Usage struct {
-		PromptTokens     int64 `json:"prompt_tokens"`
-		CompletionTokens int64 `json:"completion_tokens"`
-		TotalTokens      int64 `json:"total_tokens"`
+		PromptTokens        int64 `json:"prompt_tokens"`
+		CompletionTokens    int64 `json:"completion_tokens"`
+		TotalTokens         int64 `json:"total_tokens"`
+		PromptTokensDetails struct {
+			CachedTokens        int64 `json:"cached_tokens"`
+			CacheCreationTokens int64 `json:"cache_creation_tokens"`
+		} `json:"prompt_tokens_details"`
+		CompletionTokensDetails struct {
+			ReasoningTokens int64 `json:"reasoning_tokens"`
+		} `json:"completion_tokens_details"`
 	} `json:"usage"`
 }
 
@@ -210,13 +218,47 @@ func recordUsageBestEffort(ctx context.Context, svc *usage.Service, pricingSvc *
 	if modelID == "" {
 		modelID = requestedModel
 	}
-	cost := 0.0
+	var cost pricing.CostBreakdown
 	if pricingSvc != nil {
-		cost = pricingSvc.CalculateCost(ctx, modelID, usageInfo.Usage.PromptTokens, usageInfo.Usage.CompletionTokens)
+		cost = pricingSvc.CalculateCostDetailed(ctx, pricing.CostInput{
+			ModelID:             modelID,
+			InputTokens:         usageInfo.Usage.PromptTokens,
+			OutputTokens:        usageInfo.Usage.CompletionTokens,
+			CacheCreationTokens: usageInfo.Usage.PromptTokensDetails.CacheCreationTokens,
+			CacheReadTokens:     usageInfo.Usage.PromptTokensDetails.CachedTokens,
+			ReasoningTokens:     usageInfo.Usage.CompletionTokensDetails.ReasoningTokens,
+			ContextWindow:       usageInfo.Usage.PromptTokens,
+			PricingTier:         usageInfo.ServiceTier,
+		})
 	}
-	_ = svc.Record(ctx, usage.RecordInput{LocalKeyID: localKeyID, ProviderID: providerID, ModelRequested: requestedModel, ModelActual: actualModel, APIFormat: apiFormat, InputTokens: usageInfo.Usage.PromptTokens, OutputTokens: usageInfo.Usage.CompletionTokens, TotalCostUSD: cost, LatencyMS: latencyMS, Success: success})
+	eventKey := usageInfo.ID
+	if eventKey == "" {
+		eventKey = newRequestTrace("", requestedModel, actualModel, apiFormat).ID
+	}
+	_ = svc.Record(ctx, usage.RecordInput{
+		LocalKeyID:          localKeyID,
+		ProviderID:          providerID,
+		ModelRequested:      requestedModel,
+		ModelActual:         actualModel,
+		APIFormat:           apiFormat,
+		InputTokens:         usageInfo.Usage.PromptTokens,
+		OutputTokens:        usageInfo.Usage.CompletionTokens,
+		CacheCreationTokens: usageInfo.Usage.PromptTokensDetails.CacheCreationTokens,
+		CacheReadTokens:     usageInfo.Usage.PromptTokensDetails.CachedTokens,
+		ReasoningTokens:     usageInfo.Usage.CompletionTokensDetails.ReasoningTokens,
+		ContextWindow:       usageInfo.Usage.PromptTokens,
+		PricingTier:         usageInfo.ServiceTier,
+		TotalCostUSD:        cost.TotalUSD,
+		CostBreakdownJSON:   cost.CostBreakdownJSON,
+		PricingRuleJSON:     cost.PricingRuleJSON,
+		TimeSource:          "gateway_created_at",
+		EventKey:            eventKey,
+		ParserVersion:       1,
+		LatencyMS:           latencyMS,
+		Success:             success,
+	})
 	if success && authSvc != nil {
-		_ = authSvc.DeductUsage(ctx, localKeyID, cost, usageInfo.Usage.PromptTokens, usageInfo.Usage.CompletionTokens)
+		_ = authSvc.DeductUsage(ctx, localKeyID, cost.TotalUSD, usageInfo.Usage.PromptTokens, usageInfo.Usage.CompletionTokens)
 	}
 }
 
@@ -225,14 +267,58 @@ func recordClaudeUsageBestEffort(ctx context.Context, svc *usage.Service, pricin
 	if modelID == "" {
 		modelID = requestedModel
 	}
-	cost := 0.0
+	inputTokens := normalizeSeparateCacheInputTokens(resp.Usage.InputTokens, resp.Usage.CacheCreationInputTokens, resp.Usage.CacheReadInputTokens)
+	var cost pricing.CostBreakdown
 	if pricingSvc != nil {
-		cost = pricingSvc.CalculateCost(ctx, modelID, resp.Usage.InputTokens, resp.Usage.OutputTokens)
+		cost = pricingSvc.CalculateCostDetailed(ctx, pricing.CostInput{
+			ModelID:             modelID,
+			InputTokens:         inputTokens,
+			OutputTokens:        resp.Usage.OutputTokens,
+			CacheCreationTokens: resp.Usage.CacheCreationInputTokens,
+			CacheReadTokens:     resp.Usage.CacheReadInputTokens,
+			ContextWindow:       inputTokens,
+		})
 	}
-	_ = svc.Record(ctx, usage.RecordInput{LocalKeyID: localKeyID, ProviderID: providerID, ModelRequested: requestedModel, ModelActual: actualModel, APIFormat: apiFormat, InputTokens: resp.Usage.InputTokens, OutputTokens: resp.Usage.OutputTokens, TotalCostUSD: cost, LatencyMS: latencyMS, Success: success})
+	eventKey := resp.ID
+	if eventKey == "" {
+		eventKey = newRequestTrace("", requestedModel, actualModel, apiFormat).ID
+	}
+	_ = svc.Record(ctx, usage.RecordInput{
+		LocalKeyID:          localKeyID,
+		ProviderID:          providerID,
+		ModelRequested:      requestedModel,
+		ModelActual:         actualModel,
+		APIFormat:           apiFormat,
+		InputTokens:         inputTokens,
+		OutputTokens:        resp.Usage.OutputTokens,
+		CacheCreationTokens: resp.Usage.CacheCreationInputTokens,
+		CacheReadTokens:     resp.Usage.CacheReadInputTokens,
+		ContextWindow:       inputTokens,
+		TotalCostUSD:        cost.TotalUSD,
+		CostBreakdownJSON:   cost.CostBreakdownJSON,
+		PricingRuleJSON:     cost.PricingRuleJSON,
+		TimeSource:          "gateway_created_at",
+		EventKey:            eventKey,
+		ParserVersion:       1,
+		LatencyMS:           latencyMS,
+		Success:             success,
+	})
 	if success && authSvc != nil {
-		_ = authSvc.DeductUsage(ctx, localKeyID, cost, resp.Usage.InputTokens, resp.Usage.OutputTokens)
+		_ = authSvc.DeductUsage(ctx, localKeyID, cost.TotalUSD, inputTokens, resp.Usage.OutputTokens)
 	}
+}
+
+func normalizeSeparateCacheInputTokens(inputTokens, cacheCreationTokens, cacheReadTokens int64) int64 {
+	if inputTokens < 0 {
+		inputTokens = 0
+	}
+	if cacheCreationTokens < 0 {
+		cacheCreationTokens = 0
+	}
+	if cacheReadTokens < 0 {
+		cacheReadTokens = 0
+	}
+	return inputTokens + cacheCreationTokens + cacheReadTokens
 }
 
 func readBodyAndClose(body io.ReadCloser) ([]byte, error) {

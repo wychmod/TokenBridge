@@ -29,7 +29,7 @@ import (
 
 const (
 	maxLogFileSize = 64 * 1024 * 1024
-	parserVersion  = 2
+	parserVersion  = 4
 )
 
 type Service struct {
@@ -40,12 +40,16 @@ type Service struct {
 }
 
 type ScanResult struct {
-	FilesSeen      int       `json:"files_seen"`
-	FilesScanned   int       `json:"files_scanned"`
-	FilesSkipped   int       `json:"files_skipped"`
-	RecordsFound   int64     `json:"records_found"`
-	RecordsCreated int64     `json:"records_created"`
-	CompletedAt    time.Time `json:"completed_at"`
+	FilesSeen           int       `json:"files_seen"`
+	FilesScanned        int       `json:"files_scanned"`
+	FilesSkipped        int       `json:"files_skipped"`
+	RecordsFound        int64     `json:"records_found"`
+	RecordsCreated      int64     `json:"records_created"`
+	DuplicateGroups     int64     `json:"duplicate_groups"`
+	DroppedRecords      int64     `json:"dropped_records"`
+	TimeFallbackRecords int64     `json:"time_fallback_records"`
+	PricingFallbacks    int64     `json:"pricing_fallbacks"`
+	CompletedAt         time.Time `json:"completed_at"`
 }
 
 type Summary struct {
@@ -56,8 +60,10 @@ type Summary struct {
 	OutputTokens     int64   `json:"output_tokens"`
 	CacheCreation    int64   `json:"cache_creation_tokens"`
 	CacheRead        int64   `json:"cache_read_tokens"`
+	ReasoningTokens  int64   `json:"reasoning_tokens"`
 	CacheHitRate     float64 `json:"cache_hit_rate"`
 	PricingFallbacks int64   `json:"pricing_fallbacks"`
+	TimeFallbacks    int64   `json:"time_fallbacks"`
 	LocalOnly        bool    `json:"local_only"`
 	ScannedSources   int64   `json:"scanned_sources"`
 	LastScan         string  `json:"last_scan"`
@@ -72,6 +78,7 @@ type Breakdown struct {
 	InputTokens      int64   `json:"input_tokens"`
 	OutputTokens     int64   `json:"output_tokens"`
 	CacheReadTokens  int64   `json:"cache_read_tokens"`
+	ReasoningTokens  int64   `json:"reasoning_tokens"`
 	CacheHitRate     float64 `json:"cache_hit_rate"`
 	PricingFallbacks int64   `json:"pricing_fallbacks"`
 	LastSeen         string  `json:"last_seen,omitempty"`
@@ -123,10 +130,11 @@ type RealtimeSnapshot struct {
 	LocalOnly bool         `json:"local_only"`
 }
 
-type parsedRecord struct {
+type UsageEvent struct {
 	Tool                string
 	SessionID           string
 	RequestID           string
+	EventKey            string
 	ProjectPath         string
 	ProjectName         string
 	Model               string
@@ -134,12 +142,18 @@ type parsedRecord struct {
 	OutputTokens        int64
 	CacheCreationTokens int64
 	CacheReadTokens     int64
+	ReasoningTokens     int64
+	ContextWindow       int64
+	PricingTier         string
 	TotalTokens         int64
 	SourcePath          string
 	SourceOffset        int64
+	TimeSource          string
 	RawJSON             string
 	OccurredAt          time.Time
 }
+
+type parsedRecord = UsageEvent
 
 type logCandidate struct {
 	tool string
@@ -152,7 +166,7 @@ func NewService(db *gorm.DB, prices *pricing.Service, logger zerolog.Logger) *Se
 
 func (s *Service) Scan(ctx context.Context) (ScanResult, error) {
 	result := ScanResult{CompletedAt: s.nowFunc()}
-	s.cleanupStoredRecords(ctx)
+	result.DroppedRecords += s.cleanupStoredRecords(ctx)
 	candidates := discoverLogFiles()
 	result.FilesSeen = len(candidates)
 	for _, candidate := range candidates {
@@ -168,37 +182,57 @@ func (s *Service) Scan(ctx context.Context) (ScanResult, error) {
 			s.logger.Debug().Err(err).Str("path", candidate.path).Msg("ai tool usage: scan file failed")
 		}
 	}
-	s.cleanupStoredRecords(ctx)
+	result.DroppedRecords += s.cleanupStoredRecords(ctx)
+	result.DuplicateGroups, _ = s.duplicateAudit(ctx)
+	result.TimeFallbackRecords = s.countRows(ctx, "time_source = ?", "file_mod_time")
+	result.PricingFallbacks = s.countRows(ctx, "pricing_matched = ?", false)
 	return result, nil
 }
 
-func (s *Service) cleanupStoredRecords(ctx context.Context) {
-	_ = s.db.WithContext(ctx).Exec(`
+func (s *Service) cleanupStoredRecords(ctx context.Context) int64 {
+	var dropped int64
+	dropped += s.execCleanup(ctx, `
 		DELETE FROM ai_coding_usage_records
 		WHERE input_tokens = 0
 		  AND output_tokens = 0
 		  AND total_tokens = 0
 		  AND (cache_read_tokens > 0 OR cache_creation_tokens > 0)
-	`).Error
-	_ = s.db.WithContext(ctx).Exec(`
+	`)
+	dropped += s.execCleanup(ctx, `
+		DELETE FROM ai_coding_usage_records
+		WHERE event_key <> ''
+		  AND id IN (
+		    SELECT id
+		    FROM (
+		      SELECT id,
+		             ROW_NUMBER() OVER (
+		               PARTITION BY tool, event_key
+		               ORDER BY total_tokens DESC, created_at ASC, id ASC
+		             ) AS row_num
+		      FROM ai_coding_usage_records
+		      WHERE event_key <> ''
+		    )
+		    WHERE row_num > 1
+		  )
+	`)
+	dropped += s.execCleanup(ctx, `
 		DELETE FROM ai_coding_usage_records
 		WHERE request_id <> ''
 		  AND id IN (
-		    SELECT older.id
-		    FROM ai_coding_usage_records AS older
-		    JOIN ai_coding_usage_records AS newer
-		      ON older.tool = newer.tool
-		     AND older.session_id = newer.session_id
-		     AND older.request_id = newer.request_id
-		     AND older.id <> newer.id
-		     AND (
-		       older.total_tokens < newer.total_tokens
-		       OR (older.total_tokens = newer.total_tokens AND older.created_at > newer.created_at)
-		       OR (older.total_tokens = newer.total_tokens AND older.created_at = newer.created_at AND older.id > newer.id)
-		     )
+		    SELECT id
+		    FROM (
+		      SELECT id,
+		             ROW_NUMBER() OVER (
+		               PARTITION BY tool, session_id, request_id
+		               ORDER BY total_tokens DESC, created_at ASC, id ASC
+		             ) AS row_num
+		      FROM ai_coding_usage_records
+		      WHERE request_id <> ''
+		    )
+		    WHERE row_num > 1
 		  )
-	`).Error
-	_ = s.db.WithContext(ctx).Exec(`
+	`)
+	dropped += s.execCleanup(ctx, `
 		DELETE FROM ai_coding_usage_records
 		WHERE lower(model) = 'unknown'
 		  AND (lower(source_path) LIKE '%.jsonl' OR lower(source_path) LIKE '%.ndjson' OR lower(source_path) LIKE '%.log')
@@ -211,26 +245,65 @@ func (s *Service) cleanupStoredRecords(ctx context.Context) {
 		      AND known.id <> ai_coding_usage_records.id
 		      AND lower(known.model) <> 'unknown'
 		  )
-	`).Error
-	_ = s.db.WithContext(ctx).Exec(`
+	`)
+	dropped += s.execCleanup(ctx, `
 		DELETE FROM ai_coding_usage_records
 		WHERE (lower(source_path) LIKE '%.jsonl' OR lower(source_path) LIKE '%.ndjson' OR lower(source_path) LIKE '%.log')
 		  AND id IN (
-		    SELECT older.id
-		    FROM ai_coding_usage_records AS older
-		    JOIN ai_coding_usage_records AS newer
-		      ON older.tool = newer.tool
-		     AND older.source_path = newer.source_path
-		     AND older.source_offset = newer.source_offset
-		     AND older.id <> newer.id
-		     AND (
-		       older.total_tokens > newer.total_tokens
-		       OR (older.total_tokens = newer.total_tokens AND older.created_at > newer.created_at)
-		       OR (older.total_tokens = newer.total_tokens AND older.created_at = newer.created_at AND older.id > newer.id)
-		     )
-		    WHERE lower(older.source_path) LIKE '%.jsonl' OR lower(older.source_path) LIKE '%.ndjson' OR lower(older.source_path) LIKE '%.log'
+		    SELECT id
+		    FROM (
+		      SELECT id,
+		             ROW_NUMBER() OVER (
+		               PARTITION BY tool, source_path, source_offset
+		               ORDER BY total_tokens ASC, created_at ASC, id ASC
+		             ) AS row_num
+		      FROM ai_coding_usage_records
+		      WHERE lower(source_path) LIKE '%.jsonl'
+		         OR lower(source_path) LIKE '%.ndjson'
+		         OR lower(source_path) LIKE '%.log'
+		    )
+		    WHERE row_num > 1
 		  )
-	`).Error
+	`)
+	return dropped
+}
+
+func (s *Service) execCleanup(ctx context.Context, statement string) int64 {
+	tx := s.db.WithContext(ctx).Exec(statement)
+	if tx.Error != nil {
+		return 0
+	}
+	return tx.RowsAffected
+}
+
+func (s *Service) duplicateAudit(ctx context.Context) (int64, int64) {
+	var groups int64
+	_ = s.db.WithContext(ctx).Raw(`
+		SELECT COUNT(*) FROM (
+			SELECT tool, event_key, COUNT(*) AS rows
+			FROM ai_coding_usage_records
+			WHERE event_key <> ''
+			GROUP BY tool, event_key
+			HAVING COUNT(*) > 1
+		)
+	`).Scan(&groups).Error
+	var dropped int64
+	_ = s.db.WithContext(ctx).Raw(`
+		SELECT COALESCE(SUM(rows - 1), 0) FROM (
+			SELECT COUNT(*) AS rows
+			FROM ai_coding_usage_records
+			WHERE event_key <> ''
+			GROUP BY tool, event_key
+			HAVING COUNT(*) > 1
+		)
+	`).Scan(&dropped).Error
+	return groups, dropped
+}
+
+func (s *Service) countRows(ctx context.Context, query string, args ...any) int64 {
+	var count int64
+	_ = s.db.WithContext(ctx).Model(&models.AICodingUsageRecord{}).Where(query, args...).Count(&count).Error
+	return count
 }
 
 func (s *Service) Dashboard(ctx context.Context, days int) (Dashboard, error) {
@@ -238,7 +311,7 @@ func (s *Service) Dashboard(ctx context.Context, days int) (Dashboard, error) {
 		days = 30
 	}
 	localNow := s.nowFunc()
-	location := localNow.Location()
+	location := beijingLocation()
 	startLocal := startOfDay(localNow.In(location).AddDate(0, 0, -days+1))
 	endLocal := startOfDay(localNow.In(location).AddDate(0, 0, 1))
 	var records []models.AICodingUsageRecord
@@ -315,8 +388,8 @@ func (s *Service) Dashboard(ctx context.Context, days int) (Dashboard, error) {
 		addBreakdown(toolsByName, localRecord.Tool, "", localRecord)
 	}
 	finalizeSummary(&dashboard.Summary)
-	dashboard.Trend = completeTrend(trend, days, localNow)
-	dashboard.Heatmap = completeHeatmap(heatmap, days, localNow)
+	dashboard.Trend = completeTrend(trend, days, localNow.In(location))
+	dashboard.Heatmap = completeHeatmap(heatmap, days, localNow.In(location))
 	dashboard.ModelRank = sortedBreakdowns(modelsByName, 10)
 	dashboard.ProjectSpend = sortedBreakdowns(projectsByName, 10)
 	dashboard.ToolBreakdown = sortedBreakdowns(toolsByName, 10)
@@ -328,7 +401,7 @@ func (s *Service) Dashboard(ctx context.Context, days int) (Dashboard, error) {
 
 func (s *Service) RealtimeSnapshot(ctx context.Context) (RealtimeSnapshot, error) {
 	localNow := s.nowFunc()
-	location := localNow.Location()
+	location := beijingLocation()
 	startLocal := startOfDay(localNow.In(location))
 	endLocal := startLocal.AddDate(0, 0, 1)
 
@@ -403,7 +476,9 @@ func (s *Service) aggregateSummary(ctx context.Context, startLocal *time.Time, e
 		COALESCE(SUM(output_tokens), 0) AS output_tokens,
 		COALESCE(SUM(cache_creation_tokens), 0) AS cache_creation,
 		COALESCE(SUM(cache_read_tokens), 0) AS cache_read,
-		COALESCE(SUM(CASE WHEN pricing_matched = false THEN 1 ELSE 0 END), 0) AS pricing_fallbacks
+		COALESCE(SUM(reasoning_tokens), 0) AS reasoning_tokens,
+		COALESCE(SUM(CASE WHEN pricing_matched = false THEN 1 ELSE 0 END), 0) AS pricing_fallbacks,
+		COALESCE(SUM(CASE WHEN time_source = 'file_mod_time' THEN 1 ELSE 0 END), 0) AS time_fallbacks
 	`).Scan(&summary).Error
 	if err != nil {
 		return Summary{}, err
@@ -429,7 +504,7 @@ func (s *Service) scanFile(ctx context.Context, candidate logCandidate) (bool, i
 		return true, 0, 0, nil
 	}
 
-	records, err := parseUsageFile(candidate.tool, candidate.path, s.nowFunc())
+	records, err := parseUsageFile(candidate.tool, candidate.path, info.ModTime())
 	if err != nil {
 		s.upsertSource(ctx, sourceID, candidate, info, 0, 0, err.Error())
 		return true, 0, 0, err
@@ -453,12 +528,22 @@ func (s *Service) scanFile(ctx context.Context, candidate logCandidate) (bool, i
 	for _, id := range recordIDs {
 		parsed := parsedByID[id]
 		model := nonEmpty(parsed.Model, "unknown")
-		cost := s.prices.CalculateCostDetailed(ctx, model, parsed.InputTokens, parsed.OutputTokens, parsed.CacheCreationTokens, parsed.CacheReadTokens)
+		cost := s.prices.CalculateCostDetailed(ctx, pricing.CostInput{
+			ModelID:             model,
+			InputTokens:         parsed.InputTokens,
+			OutputTokens:        parsed.OutputTokens,
+			CacheCreationTokens: parsed.CacheCreationTokens,
+			CacheReadTokens:     parsed.CacheReadTokens,
+			ReasoningTokens:     parsed.ReasoningTokens,
+			ContextWindow:       parsed.ContextWindow,
+			PricingTier:         parsed.PricingTier,
+		})
 		row := models.AICodingUsageRecord{
 			ID:                  id,
 			Tool:                parsed.Tool,
 			SessionID:           parsed.SessionID,
 			RequestID:           parsed.RequestID,
+			EventKey:            parsed.EventKey,
 			ProjectPath:         parsed.ProjectPath,
 			ProjectName:         parsed.ProjectName,
 			Model:               model,
@@ -466,12 +551,19 @@ func (s *Service) scanFile(ctx context.Context, candidate logCandidate) (bool, i
 			OutputTokens:        parsed.OutputTokens,
 			CacheCreationTokens: parsed.CacheCreationTokens,
 			CacheReadTokens:     parsed.CacheReadTokens,
+			ReasoningTokens:     parsed.ReasoningTokens,
+			ContextWindow:       parsed.ContextWindow,
+			PricingTier:         parsed.PricingTier,
 			TotalTokens:         parsed.TotalTokens,
 			TotalCostUSD:        cost.TotalUSD,
+			CostBreakdownJSON:   cost.CostBreakdownJSON,
+			PricingRuleJSON:     cost.PricingRuleJSON,
 			PricingMatched:      cost.Matched,
 			PricingFallback:     cost.FallbackModel,
 			SourcePath:          parsed.SourcePath,
 			SourceOffset:        parsed.SourceOffset,
+			TimeSource:          parsed.TimeSource,
+			ParserVersion:       parserVersion,
 			RawJSON:             parsed.RawJSON,
 			OccurredAt:          parsed.OccurredAt,
 			CreatedAt:           s.nowFunc(),
@@ -482,10 +574,11 @@ func (s *Service) scanFile(ctx context.Context, candidate logCandidate) (bool, i
 		tx := s.db.WithContext(ctx).Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "id"}},
 			DoUpdates: clause.AssignmentColumns([]string{
-				"tool", "session_id", "request_id", "project_path", "project_name", "model",
-				"input_tokens", "output_tokens", "cache_creation_tokens", "cache_read_tokens",
-				"total_tokens", "total_cost_usd", "pricing_matched", "pricing_fallback",
-				"source_path", "source_offset", "raw_json", "occurred_at",
+				"tool", "session_id", "request_id", "event_key", "project_path", "project_name", "model",
+				"input_tokens", "output_tokens", "cache_creation_tokens", "cache_read_tokens", "reasoning_tokens",
+				"context_window", "pricing_tier", "total_tokens", "total_cost_usd", "cost_breakdown_json", "pricing_rule_json",
+				"pricing_matched", "pricing_fallback", "source_path", "source_offset", "time_source", "parser_version",
+				"raw_json", "occurred_at",
 			}),
 		}).Create(&row)
 		if tx.Error != nil {
@@ -676,8 +769,7 @@ func isLogFile(path string) bool {
 			strings.Contains(base, "session") ||
 			strings.Contains(base, "history") ||
 			strings.Contains(base, "trace") ||
-			strings.Contains(lowerPath, string(filepath.Separator)+"traces"+string(filepath.Separator)) ||
-			strings.Contains(lowerPath, string(filepath.Separator)+"history"+string(filepath.Separator))
+			strings.Contains(lowerPath, string(filepath.Separator)+"traces"+string(filepath.Separator))
 	}
 	return false
 }
@@ -772,6 +864,12 @@ func recordFromMap(tool string, sourcePath string, item map[string]any, raw stri
 			cacheReadKey = "cached_tokens_details"
 		}
 	}
+	reasoningTokens := firstIntShallow(tokens, "reasoning_output_tokens", "reasoningOutputTokens", "reasoning_tokens", "reasoningTokens")
+	if reasoningTokens == 0 {
+		reasoningTokens = detailsReasoningTokens(tokens)
+	}
+	contextWindow := firstInt(item, "model_context_window", "modelContextWindow", "context_window", "contextWindow", "max_context_tokens")
+	pricingTier := firstString(item, "service_tier", "serviceTier", "pricing_tier", "pricingTier")
 	total, _ := firstIntShallowWithKey(tokens, "total_tokens", "totalTokens")
 	if input == 0 && output == 0 && cacheCreate == 0 && cacheRead == 0 && total == 0 {
 		return parsedRecord{}, false
@@ -805,14 +903,13 @@ func recordFromMap(tool string, sourcePath string, item map[string]any, raw stri
 	if projectPath == "" {
 		projectPath = ctx["project_path"]
 	}
-	occurredAt := firstTime(item, fallbackTime, "timestamp", "created_at", "createdAt", "time", "date", "request_time", "requestTime")
-	if occurredAt.IsZero() {
-		occurredAt = fallbackTime
-	}
+	occurredAt, timeSource := firstTimeWithSource(item, fallbackTime, "timestamp", "created_at", "createdAt", "time", "date", "request_time", "requestTime")
+	eventKey := usageEventKey(tool, sourcePath, item, tokens, sessionID, requestID)
 	return parsedRecord{
 		Tool:                tool,
 		SessionID:           sessionID,
 		RequestID:           requestID,
+		EventKey:            eventKey,
 		ProjectPath:         projectPath,
 		ProjectName:         projectName(projectPath, sourcePath),
 		Model:               model,
@@ -820,9 +917,13 @@ func recordFromMap(tool string, sourcePath string, item map[string]any, raw stri
 		OutputTokens:        output,
 		CacheCreationTokens: cacheCreate,
 		CacheReadTokens:     cacheRead,
+		ReasoningTokens:     reasoningTokens,
+		ContextWindow:       contextWindow,
+		PricingTier:         pricingTier,
 		TotalTokens:         total,
 		SourcePath:          sourcePath,
 		SourceOffset:        offset,
+		TimeSource:          timeSource,
 		RawJSON:             truncate(raw, 8192),
 		OccurredAt:          occurredAt,
 	}, true
@@ -895,6 +996,90 @@ func shouldSkipChildTokenContainer(key string) bool {
 		normalized == "completion_tokens_details" ||
 		normalized == "inputtokensdetails" ||
 		normalized == "outputtokensdetails"
+}
+
+func usageEventKey(tool string, sourcePath string, item map[string]any, tokens map[string]any, sessionID string, requestID string) string {
+	if strings.EqualFold(tool, "Codex") {
+		if key := codexTokenCountEventKey(item, tokens); key != "" {
+			return strings.Join([]string{"codex", sessionID, key}, "|")
+		}
+	}
+	if strings.EqualFold(tool, "WorkBuddy") {
+		if key := workBuddyEventKey(item, tokens); key != "" {
+			return key
+		}
+	}
+	if strings.EqualFold(tool, "Claude Code") && requestID != "" {
+		return strings.Join([]string{"claude", sessionID, requestID}, "|")
+	}
+	return ""
+}
+
+func codexTokenCountEventKey(item map[string]any, tokens map[string]any) string {
+	payload, ok := mapChild(item, "payload")
+	if !ok || !strings.EqualFold(firstStringShallow(payload, "type"), "token_count") {
+		return ""
+	}
+	info, ok := mapChild(payload, "info")
+	if !ok {
+		return ""
+	}
+	totalUsage, ok := mapChild(info, "total_token_usage")
+	if !ok {
+		return ""
+	}
+	parts := []string{
+		"codex-token-count",
+		tokenFingerprintPart("total", totalUsage),
+		tokenFingerprintPart("last", tokens),
+		strconv.FormatInt(firstIntShallow(info, "model_context_window", "modelContextWindow"), 10),
+	}
+	return strings.Join(parts, "|")
+}
+
+func workBuddyEventKey(item map[string]any, tokens map[string]any) string {
+	providerData := item
+	if child, ok := mapChild(item, "providerData"); ok {
+		providerData = child
+	}
+	messageID := firstStringShallow(providerData, "messageId")
+	if messageID != "" {
+		return "workbuddy|message|" + messageID
+	}
+	traceID := firstStringShallow(providerData, "traceId")
+	conversationRequestID := firstStringShallow(providerData, "conversationRequestId")
+	if traceID != "" || conversationRequestID != "" {
+		return strings.Join([]string{"workbuddy", traceID, conversationRequestID, tokenFingerprintPart("usage", tokens)}, "|")
+	}
+	return ""
+}
+
+func tokenFingerprintPart(prefix string, item map[string]any) string {
+	values := []string{prefix}
+	for _, key := range []string{
+		"input_tokens", "inputTokens", "prompt_tokens", "promptTokens",
+		"output_tokens", "outputTokens", "completion_tokens", "completionTokens",
+		"cached_input_tokens", "cachedInputTokens", "cache_read_input_tokens", "cacheReadInputTokens", "cache_read_tokens", "cacheReadTokens",
+		"cache_creation_input_tokens", "cacheCreationInputTokens", "cache_creation_tokens", "cacheWriteTokens",
+		"reasoning_output_tokens", "reasoningOutputTokens", "reasoning_tokens", "reasoningTokens",
+		"total_tokens", "totalTokens",
+	} {
+		value, _ := firstIntShallowWithKey(item, key)
+		values = append(values, strconv.FormatInt(value, 10))
+	}
+	return strings.Join(values, ":")
+}
+
+func firstStringShallow(item map[string]any, key string) string {
+	for itemKey, value := range item {
+		if !strings.EqualFold(itemKey, key) {
+			continue
+		}
+		if text, ok := value.(string); ok {
+			return strings.TrimSpace(text)
+		}
+	}
+	return ""
 }
 
 func mergeContext(ctx map[string]string, item map[string]any) {
@@ -1020,6 +1205,19 @@ func detailsCachedTokens(item map[string]any) int64 {
 	return total
 }
 
+func detailsReasoningTokens(item map[string]any) int64 {
+	var total int64
+	for _, key := range []string{"outputTokensDetails", "completion_tokens_details"} {
+		for itemKey, value := range item {
+			if !strings.EqualFold(itemKey, key) {
+				continue
+			}
+			total += reasoningTokensFromDetails(value)
+		}
+	}
+	return total
+}
+
 func cachedTokensFromDetails(value any) int64 {
 	switch typed := value.(type) {
 	case map[string]any:
@@ -1035,7 +1233,27 @@ func cachedTokensFromDetails(value any) int64 {
 	}
 }
 
+func reasoningTokensFromDetails(value any) int64 {
+	switch typed := value.(type) {
+	case map[string]any:
+		return firstIntShallow(typed, "reasoning_tokens", "reasoning_output_tokens", "reasoningTokens", "reasoningOutputTokens")
+	case []any:
+		var total int64
+		for _, item := range typed {
+			total += reasoningTokensFromDetails(item)
+		}
+		return total
+	default:
+		return 0
+	}
+}
+
 func firstTime(item map[string]any, fallback time.Time, keys ...string) time.Time {
+	value, _ := firstTimeWithSource(item, fallback, keys...)
+	return value
+}
+
+func firstTimeWithSource(item map[string]any, fallback time.Time, keys ...string) (time.Time, string) {
 	for _, key := range keys {
 		value, ok := findValue(item, key)
 		if !ok {
@@ -1043,20 +1261,34 @@ func firstTime(item map[string]any, fallback time.Time, keys ...string) time.Tim
 		}
 		switch typed := value.(type) {
 		case string:
-			for _, layout := range []string{time.RFC3339Nano, time.RFC3339, "2006-01-02 15:04:05", "2006-01-02T15:04:05"} {
+			for _, layout := range []string{time.RFC3339Nano, time.RFC3339} {
 				if parsed, err := time.Parse(layout, typed); err == nil {
-					return parsed
+					return parsed.UTC(), "timestamp"
+				}
+			}
+			location := beijingLocation()
+			for _, layout := range []string{"2006-01-02 15:04:05", "2006-01-02T15:04:05"} {
+				if parsed, err := time.ParseInLocation(layout, typed, location); err == nil {
+					return parsed.UTC(), "timestamp"
 				}
 			}
 		case float64:
-			return unixTime(int64(typed), fallback)
+			return unixTime(int64(typed), fallback).UTC(), "timestamp"
 		case int64:
-			return unixTime(typed, fallback)
+			return unixTime(typed, fallback).UTC(), "timestamp"
 		case int:
-			return unixTime(int64(typed), fallback)
+			return unixTime(int64(typed), fallback).UTC(), "timestamp"
 		}
 	}
-	return fallback
+	return fallback.UTC(), "file_mod_time"
+}
+
+func beijingLocation() *time.Location {
+	location, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		return time.FixedZone("CST", 8*60*60)
+	}
+	return location
 }
 
 func findValue(value any, key string) (any, bool) {
@@ -1113,6 +1345,11 @@ func unixTime(value int64, fallback time.Time) time.Time {
 }
 
 func buildRecordID(record parsedRecord) string {
+	if record.EventKey != "" {
+		return "aiu_" + hashText(strings.Join([]string{
+			record.Tool, record.EventKey,
+		}, "|"))
+	}
 	if record.RequestID != "" {
 		return "aiu_" + hashText(strings.Join([]string{
 			record.Tool, record.SessionID, record.RequestID,
@@ -1163,8 +1400,12 @@ func addSummary(summary *Summary, record models.AICodingUsageRecord) {
 	summary.OutputTokens += record.OutputTokens
 	summary.CacheCreation += record.CacheCreationTokens
 	summary.CacheRead += record.CacheReadTokens
+	summary.ReasoningTokens += record.ReasoningTokens
 	if !record.PricingMatched {
 		summary.PricingFallbacks++
+	}
+	if record.TimeSource == "file_mod_time" {
+		summary.TimeFallbacks++
 	}
 }
 
@@ -1191,6 +1432,7 @@ func addBreakdown(items map[string]*Breakdown, name string, tool string, record 
 	item.InputTokens += record.InputTokens
 	item.OutputTokens += record.OutputTokens
 	item.CacheReadTokens += record.CacheReadTokens
+	item.ReasoningTokens += record.ReasoningTokens
 	if !record.PricingMatched {
 		item.PricingFallbacks++
 	}
@@ -1254,7 +1496,7 @@ func completeHeatmap(points map[string]*HeatmapPoint, days int, now time.Time) [
 func exportCSV(dashboard Dashboard, exchangeRate float64) ([]byte, error) {
 	buf := &bytes.Buffer{}
 	writer := csv.NewWriter(buf)
-	_ = writer.Write([]string{"section", "name", "tool", "requests", "tokens", "cache_hit_rate", "cost_usd", "cost_cny"})
+	_ = writer.Write([]string{"section", "name", "tool", "requests", "tokens", "reasoning_tokens", "cache_hit_rate", "cost_usd", "cost_cny"})
 	writeBreakdownCSV(writer, "model", dashboard.ModelRank, exchangeRate)
 	writeBreakdownCSV(writer, "project", dashboard.ProjectSpend, exchangeRate)
 	writeBreakdownCSV(writer, "tool", dashboard.ToolBreakdown, exchangeRate)
@@ -1270,6 +1512,7 @@ func writeBreakdownCSV(writer *csv.Writer, section string, items []Breakdown, ex
 			item.Tool,
 			strconv.FormatInt(item.Requests, 10),
 			strconv.FormatInt(item.Tokens, 10),
+			strconv.FormatInt(item.ReasoningTokens, 10),
 			fmt.Sprintf("%.4f", item.CacheHitRate),
 			fmt.Sprintf("%.8f", item.CostUSD),
 			fmt.Sprintf("%.8f", item.CostUSD*exchangeRate),
@@ -1318,10 +1561,12 @@ func exportXLSX(dashboard Dashboard, exchangeRate float64) ([]byte, error) {
 				{"output_tokens", dashboard.Summary.OutputTokens},
 				{"cache_creation_tokens", dashboard.Summary.CacheCreation},
 				{"cache_read_tokens", dashboard.Summary.CacheRead},
+				{"reasoning_tokens", dashboard.Summary.ReasoningTokens},
 				{"cache_hit_rate", dashboard.Summary.CacheHitRate},
 				{"total_cost_usd", dashboard.Summary.TotalCostUSD},
 				{"total_cost_cny", dashboard.Summary.TotalCostUSD * exchangeRate},
 				{"pricing_fallbacks", dashboard.Summary.PricingFallbacks},
+				{"time_fallbacks", dashboard.Summary.TimeFallbacks},
 				{"scanned_sources", dashboard.Summary.ScannedSources},
 				{"last_scan", dashboard.Summary.LastScan},
 				{"local_only", dashboard.Summary.LocalOnly},
@@ -1379,7 +1624,7 @@ func heatmapRows(points []HeatmapPoint, exchangeRate float64) [][]any {
 }
 
 func breakdownRows(items []Breakdown, exchangeRate float64) [][]any {
-	rows := [][]any{{"name", "tool", "requests", "tokens", "input_tokens", "output_tokens", "cache_read_tokens", "cache_hit_rate", "cost_usd", "cost_cny", "pricing_fallbacks", "last_seen"}}
+	rows := [][]any{{"name", "tool", "requests", "tokens", "input_tokens", "output_tokens", "cache_read_tokens", "reasoning_tokens", "cache_hit_rate", "cost_usd", "cost_cny", "pricing_fallbacks", "last_seen"}}
 	for _, item := range items {
 		rows = append(rows, []any{
 			item.Name,
@@ -1389,6 +1634,7 @@ func breakdownRows(items []Breakdown, exchangeRate float64) [][]any {
 			item.InputTokens,
 			item.OutputTokens,
 			item.CacheReadTokens,
+			item.ReasoningTokens,
 			item.CacheHitRate,
 			item.CostUSD,
 			item.CostUSD * exchangeRate,
@@ -1408,7 +1654,7 @@ func sourceRows(items []SourceInfo) [][]any {
 }
 
 func recentRows(items []models.AICodingUsageRecord, exchangeRate float64) [][]any {
-	rows := [][]any{{"occurred_at", "tool", "model", "project", "tokens", "input_tokens", "output_tokens", "cache_read_tokens", "cost_usd", "cost_cny"}}
+	rows := [][]any{{"occurred_at", "tool", "model", "project", "tokens", "input_tokens", "output_tokens", "cache_read_tokens", "reasoning_tokens", "context_window", "pricing_tier", "time_source", "cost_usd", "cost_cny"}}
 	for _, item := range items {
 		rows = append(rows, []any{
 			item.OccurredAt.Format(time.RFC3339),
@@ -1419,6 +1665,10 @@ func recentRows(items []models.AICodingUsageRecord, exchangeRate float64) [][]an
 			item.InputTokens,
 			item.OutputTokens,
 			item.CacheReadTokens,
+			item.ReasoningTokens,
+			item.ContextWindow,
+			item.PricingTier,
+			item.TimeSource,
 			item.TotalCostUSD,
 			item.TotalCostUSD * exchangeRate,
 		})

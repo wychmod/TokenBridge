@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"net/http"
 	"strconv"
 
@@ -82,24 +81,45 @@ func (h *pricingHandlers) handleEstimate(w http.ResponseWriter, req *http.Reques
 	modelID := req.FormValue("model")
 	inputTokens, _ := strconv.ParseInt(req.FormValue("input_tokens"), 10, 64)
 	outputTokens, _ := strconv.ParseInt(req.FormValue("output_tokens"), 10, 64)
+	cacheCreationTokens, _ := strconv.ParseInt(req.FormValue("cache_creation_tokens"), 10, 64)
+	cacheReadTokens, _ := strconv.ParseInt(req.FormValue("cache_read_tokens"), 10, 64)
+	reasoningTokens, _ := strconv.ParseInt(req.FormValue("reasoning_tokens"), 10, 64)
+	contextWindow, _ := strconv.ParseInt(req.FormValue("context_window"), 10, 64)
+	pricingTier := req.FormValue("pricing_tier")
 
 	if modelID == "" {
 		respondJSON(w, http.StatusBadRequest, map[string]any{"error": "model 参数不能为空"})
 		return
 	}
 
-	ctx := context.Background()
+	ctx := req.Context()
 	lookup := h.svc.LookupWithFallback(ctx, modelID)
-	cost := h.svc.CalculateCost(ctx, modelID, inputTokens, outputTokens)
+	cost := h.svc.CalculateCostDetailed(ctx, pricing.CostInput{
+		ModelID:             modelID,
+		InputTokens:         inputTokens,
+		OutputTokens:        outputTokens,
+		CacheCreationTokens: cacheCreationTokens,
+		CacheReadTokens:     cacheReadTokens,
+		ReasoningTokens:     reasoningTokens,
+		ContextWindow:       contextWindow,
+		PricingTier:         pricingTier,
+	})
 
 	respondJSON(w, http.StatusOK, map[string]any{
-		"model_id":       modelID,
-		"input_tokens":   inputTokens,
-		"output_tokens":  outputTokens,
-		"estimated_usd":  cost,
-		"pricing":        lookup.Pricing,
-		"matched":        lookup.Matched,
-		"fallback_used":  lookup.FallbackUsed,
-		"fallback_model": lookup.FallbackModel,
+		"model_id":              modelID,
+		"input_tokens":          inputTokens,
+		"output_tokens":         outputTokens,
+		"cache_creation_tokens": cacheCreationTokens,
+		"cache_read_tokens":     cacheReadTokens,
+		"reasoning_tokens":      reasoningTokens,
+		"context_window":        cost.ContextWindow,
+		"pricing_tier":          cost.PricingTier,
+		"estimated_usd":         cost.TotalUSD,
+		"cost_breakdown":        cost,
+		"pricing_rule_json":     cost.PricingRuleJSON,
+		"pricing":               lookup.Pricing,
+		"matched":               lookup.Matched,
+		"fallback_used":         lookup.FallbackUsed,
+		"fallback_model":        lookup.FallbackModel,
 	})
 }

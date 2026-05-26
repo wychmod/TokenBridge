@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"tokenbridge/internal/models"
+	"tokenbridge/internal/pricing"
 	"tokenbridge/internal/provider"
 	"tokenbridge/internal/routing"
 	"tokenbridge/internal/usage"
@@ -40,11 +41,9 @@ func (r *Router) handleClaudeMessagesStream(w http.ResponseWriter, req *http.Req
 	w.Header().Set("X-Request-Trace-Id", trace.ID)
 	w.WriteHeader(http.StatusOK)
 
-	// Track usage from Claude SSE stream
-	// Claude sends usage in "message_start" (input_tokens) and "message_delta" (output_tokens)
-	var streamInputTokens int64
-	var streamOutputTokens int64
+	// Track usage from Claude SSE stream.
 	currentEvent := ""
+	streamUsage := claudeStreamUsage{}
 
 	reader := bufio.NewReader(responseBody)
 	for {
@@ -58,35 +57,7 @@ func (r *Router) handleClaudeMessagesStream(w http.ResponseWriter, req *http.Req
 			if strings.HasPrefix(lineStr, "event: ") {
 				currentEvent = strings.TrimPrefix(lineStr, "event: ")
 			}
-			// Parse usage from message_start (has input_tokens)
-			if currentEvent == "message_start" && strings.HasPrefix(lineStr, "data: ") {
-				var msgStart struct {
-					Message struct {
-						Usage struct {
-							InputTokens  int64 `json:"input_tokens"`
-							OutputTokens int64 `json:"output_tokens"`
-						} `json:"usage"`
-					} `json:"message"`
-				}
-				if json.Unmarshal([]byte(lineStr[6:]), &msgStart) == nil {
-					if msgStart.Message.Usage.InputTokens > 0 {
-						streamInputTokens = msgStart.Message.Usage.InputTokens
-					}
-				}
-			}
-			// Parse usage from message_delta (has output_tokens)
-			if currentEvent == "message_delta" && strings.HasPrefix(lineStr, "data: ") {
-				var msgDelta struct {
-					Usage struct {
-						OutputTokens int64 `json:"output_tokens"`
-					} `json:"usage"`
-				}
-				if json.Unmarshal([]byte(lineStr[6:]), &msgDelta) == nil {
-					if msgDelta.Usage.OutputTokens > 0 {
-						streamOutputTokens = msgDelta.Usage.OutputTokens
-					}
-				}
-			}
+			parseClaudeStreamUsageLine(currentEvent, lineStr, &streamUsage)
 		}
 		if readErr != nil {
 			break
@@ -94,30 +65,103 @@ func (r *Router) handleClaudeMessagesStream(w http.ResponseWriter, req *http.Req
 	}
 
 	// Record usage if we got it from the stream
-	if streamInputTokens > 0 || streamOutputTokens > 0 {
+	if streamUsage.InputTokens > 0 || streamUsage.OutputTokens > 0 {
 		modelID := decision.Model
-		cost := 0.0
+		inputTokens := streamUsage.NormalizedInputTokens()
+		var cost pricing.CostBreakdown
 		if r.deps.Pricing != nil {
-			cost = r.deps.Pricing.CalculateCost(req.Context(), modelID, streamInputTokens, streamOutputTokens)
+			cost = r.deps.Pricing.CalculateCostDetailed(req.Context(), pricing.CostInput{
+				ModelID:             modelID,
+				InputTokens:         inputTokens,
+				OutputTokens:        streamUsage.OutputTokens,
+				CacheCreationTokens: streamUsage.CacheCreationInputTokens,
+				CacheReadTokens:     streamUsage.CacheReadInputTokens,
+				ContextWindow:       inputTokens,
+			})
 		}
 		_ = r.deps.Usage.Record(req.Context(), usage.RecordInput{
-			LocalKeyID:     localKey.ID,
-			ProviderID:     providerID,
-			ModelRequested: meta.Model,
-			ModelActual:    decision.Model,
-			APIFormat:      "claude_stream",
-			InputTokens:    streamInputTokens,
-			OutputTokens:   streamOutputTokens,
-			TotalCostUSD:   cost,
-			LatencyMS:      time.Since(startedAt).Milliseconds(),
-			Success:        true,
+			LocalKeyID:          localKey.ID,
+			ProviderID:          providerID,
+			ModelRequested:      meta.Model,
+			ModelActual:         decision.Model,
+			APIFormat:           "claude_stream",
+			InputTokens:         inputTokens,
+			OutputTokens:        streamUsage.OutputTokens,
+			CacheCreationTokens: streamUsage.CacheCreationInputTokens,
+			CacheReadTokens:     streamUsage.CacheReadInputTokens,
+			ContextWindow:       inputTokens,
+			TotalCostUSD:        cost.TotalUSD,
+			CostBreakdownJSON:   cost.CostBreakdownJSON,
+			PricingRuleJSON:     cost.PricingRuleJSON,
+			TimeSource:          "gateway_created_at",
+			EventKey:            trace.ID,
+			ParserVersion:       1,
+			LatencyMS:           time.Since(startedAt).Milliseconds(),
+			Success:             true,
 		})
 		if r.deps.Keys != nil {
-			_ = r.deps.Keys.DeductUsage(req.Context(), localKey.ID, cost, streamInputTokens, streamOutputTokens)
+			_ = r.deps.Keys.DeductUsage(req.Context(), localKey.ID, cost.TotalUSD, inputTokens, streamUsage.OutputTokens)
 		}
 	}
 
 	logRequestBestEffort(req.Context(), r.deps.DB, localKey.ID, providerID, "/v1/messages", req.Method, http.StatusOK, time.Since(startedAt).Milliseconds(), "", trace)
+}
+
+type claudeStreamUsage struct {
+	InputTokens              int64
+	OutputTokens             int64
+	CacheCreationInputTokens int64
+	CacheReadInputTokens     int64
+}
+
+func (u claudeStreamUsage) NormalizedInputTokens() int64 {
+	return normalizeSeparateCacheInputTokens(u.InputTokens, u.CacheCreationInputTokens, u.CacheReadInputTokens)
+}
+
+func parseClaudeStreamUsageLine(currentEvent string, line string, usage *claudeStreamUsage) {
+	if usage == nil || !strings.HasPrefix(line, "data: ") {
+		return
+	}
+	switch currentEvent {
+	case "message_start":
+		var msgStart struct {
+			Message struct {
+				Usage struct {
+					InputTokens              int64 `json:"input_tokens"`
+					OutputTokens             int64 `json:"output_tokens"`
+					CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
+					CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
+				} `json:"usage"`
+			} `json:"message"`
+		}
+		if json.Unmarshal([]byte(line[6:]), &msgStart) != nil {
+			return
+		}
+		if msgStart.Message.Usage.InputTokens > 0 {
+			usage.InputTokens = msgStart.Message.Usage.InputTokens
+		}
+		if msgStart.Message.Usage.OutputTokens > 0 {
+			usage.OutputTokens = msgStart.Message.Usage.OutputTokens
+		}
+		if msgStart.Message.Usage.CacheCreationInputTokens > 0 {
+			usage.CacheCreationInputTokens = msgStart.Message.Usage.CacheCreationInputTokens
+		}
+		if msgStart.Message.Usage.CacheReadInputTokens > 0 {
+			usage.CacheReadInputTokens = msgStart.Message.Usage.CacheReadInputTokens
+		}
+	case "message_delta":
+		var msgDelta struct {
+			Usage struct {
+				OutputTokens int64 `json:"output_tokens"`
+			} `json:"usage"`
+		}
+		if json.Unmarshal([]byte(line[6:]), &msgDelta) != nil {
+			return
+		}
+		if msgDelta.Usage.OutputTokens > 0 {
+			usage.OutputTokens = msgDelta.Usage.OutputTokens
+		}
+	}
 }
 
 func (r *Router) forwardClaudeStreamWithFallback(req *http.Request, localKey *models.LocalKey, decision *routing.Decision, requestBytes []byte) (io.ReadCloser, string, string, int, []string, error) {

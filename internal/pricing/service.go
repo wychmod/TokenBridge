@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -40,14 +41,30 @@ type LookupResult struct {
 }
 
 type CostBreakdown struct {
-	InputUSD         float64 `json:"input_usd"`
-	OutputUSD        float64 `json:"output_usd"`
-	CacheCreationUSD float64 `json:"cache_creation_usd"`
-	CacheReadUSD     float64 `json:"cache_read_usd"`
-	TotalUSD         float64 `json:"total_usd"`
-	Matched          bool    `json:"matched"`
-	FallbackUsed     bool    `json:"fallback_used"`
-	FallbackModel    string  `json:"fallback_model,omitempty"`
+	InputUSD          float64 `json:"input_usd"`
+	OutputUSD         float64 `json:"output_usd"`
+	CacheCreationUSD  float64 `json:"cache_creation_usd"`
+	CacheReadUSD      float64 `json:"cache_read_usd"`
+	ReasoningUSD      float64 `json:"reasoning_usd"`
+	TotalUSD          float64 `json:"total_usd"`
+	Matched           bool    `json:"matched"`
+	FallbackUsed      bool    `json:"fallback_used"`
+	FallbackModel     string  `json:"fallback_model,omitempty"`
+	PricingTier       string  `json:"pricing_tier,omitempty"`
+	ContextWindow     int64   `json:"context_window,omitempty"`
+	CostBreakdownJSON string  `json:"cost_breakdown_json,omitempty"`
+	PricingRuleJSON   string  `json:"pricing_rule_json,omitempty"`
+}
+
+type CostInput struct {
+	ModelID             string
+	InputTokens         int64
+	OutputTokens        int64
+	CacheCreationTokens int64
+	CacheReadTokens     int64
+	ReasoningTokens     int64
+	ContextWindow       int64
+	PricingTier         string
 }
 
 type litellmModelEntry struct {
@@ -64,6 +81,7 @@ type litellmModelEntry struct {
 	SupportsPromptCaching       bool    `json:"supports_prompt_caching"`
 	SupportsReasoning           bool    `json:"supports_reasoning"`
 	DeprecationDate             string  `json:"deprecation_date"`
+	RawJSON                     string  `json:"-"`
 }
 
 func NewService(db *gorm.DB, logger zerolog.Logger) *Service {
@@ -151,40 +169,194 @@ func (s *Service) LookupWithFallback(ctx context.Context, modelID string) Lookup
 
 // CalculateCost computes the USD cost for a request given model pricing and token counts.
 func (s *Service) CalculateCost(ctx context.Context, modelID string, inputTokens, outputTokens int64) float64 {
-	return s.CalculateCostDetailed(ctx, modelID, inputTokens, outputTokens, 0, 0).TotalUSD
+	return s.CalculateCostDetailed(ctx, CostInput{ModelID: modelID, InputTokens: inputTokens, OutputTokens: outputTokens}).TotalUSD
 }
 
 // CalculateCostDetailed computes request cost using the same local pricing cache as CalculateCost,
 // including prompt-cache write/read token rates when they are available.
-func (s *Service) CalculateCostDetailed(ctx context.Context, modelID string, inputTokens, outputTokens, cacheCreationTokens, cacheReadTokens int64) CostBreakdown {
-	lookup := s.LookupWithFallback(ctx, modelID)
+func (s *Service) CalculateCostDetailed(ctx context.Context, input CostInput) CostBreakdown {
+	lookup := s.LookupWithFallback(ctx, input.ModelID)
 	p := lookup.Pricing
 	if p == nil {
 		return CostBreakdown{}
 	}
-	uncachedInput := inputTokens - cacheCreationTokens - cacheReadTokens
+	contextWindow := input.ContextWindow
+	if contextWindow <= 0 {
+		contextWindow = input.InputTokens
+	}
+	rates := parsePricingRates(p.PricingJSON)
+	rule := map[string]any{
+		"model_id":       p.ModelID,
+		"pricing_tier":   strings.TrimSpace(input.PricingTier),
+		"context_window": contextWindow,
+	}
+	inputRate, inputRule := tieredRate(rates, "input_cost_per_token", p.InputCostPerToken, contextWindow, input.PricingTier)
+	outputRate, outputRule := tieredRate(rates, "output_cost_per_token", p.OutputCostPerToken, contextWindow, input.PricingTier)
+	cacheCreationRate, cacheCreationRule := tieredRate(rates, "cache_creation_input_token_cost", p.CacheCreationCostPerToken, contextWindow, input.PricingTier)
+	if cacheCreationRate == 0 {
+		cacheCreationRate = inputRate
+		cacheCreationRule = inputRule
+	}
+	cacheReadRate, cacheReadRule := tieredRate(rates, "cache_read_input_token_cost", p.CacheReadCostPerToken, contextWindow, input.PricingTier)
+	if cacheReadRate == 0 {
+		cacheReadRate = inputRate
+		cacheReadRule = inputRule
+	}
+	reasoningRate, reasoningRule := tieredRate(rates, "output_cost_per_reasoning_token", 0, contextWindow, input.PricingTier)
+	if reasoningRate == 0 {
+		reasoningRate = outputRate
+		reasoningRule = "output_cost_per_token"
+	}
+
+	uncachedInput := input.InputTokens - input.CacheCreationTokens - input.CacheReadTokens
 	if uncachedInput < 0 {
 		uncachedInput = 0
 	}
-	cacheCreationRate := p.CacheCreationCostPerToken
-	if cacheCreationRate == 0 {
-		cacheCreationRate = p.InputCostPerToken
+	reasoningTokens := input.ReasoningTokens
+	if reasoningTokens < 0 {
+		reasoningTokens = 0
 	}
-	cacheReadRate := p.CacheReadCostPerToken
-	if cacheReadRate == 0 {
-		cacheReadRate = p.InputCostPerToken
+	if reasoningTokens > input.OutputTokens {
+		reasoningTokens = input.OutputTokens
 	}
+	regularOutput := input.OutputTokens - reasoningTokens
 	breakdown := CostBreakdown{
-		InputUSD:         float64(uncachedInput) * p.InputCostPerToken,
-		OutputUSD:        float64(outputTokens) * p.OutputCostPerToken,
-		CacheCreationUSD: float64(cacheCreationTokens) * cacheCreationRate,
-		CacheReadUSD:     float64(cacheReadTokens) * cacheReadRate,
+		InputUSD:         float64(uncachedInput) * inputRate,
+		OutputUSD:        float64(regularOutput) * outputRate,
+		CacheCreationUSD: float64(input.CacheCreationTokens) * cacheCreationRate,
+		CacheReadUSD:     float64(input.CacheReadTokens) * cacheReadRate,
+		ReasoningUSD:     float64(reasoningTokens) * reasoningRate,
 		Matched:          lookup.Matched,
 		FallbackUsed:     lookup.FallbackUsed,
 		FallbackModel:    lookup.FallbackModel,
+		PricingTier:      strings.TrimSpace(input.PricingTier),
+		ContextWindow:    contextWindow,
 	}
-	breakdown.TotalUSD = breakdown.InputUSD + breakdown.OutputUSD + breakdown.CacheCreationUSD + breakdown.CacheReadUSD
+	breakdown.TotalUSD = breakdown.InputUSD + breakdown.OutputUSD + breakdown.CacheCreationUSD + breakdown.CacheReadUSD + breakdown.ReasoningUSD
+	rule["input_rate_rule"] = inputRule
+	rule["output_rate_rule"] = outputRule
+	rule["cache_creation_rate_rule"] = cacheCreationRule
+	rule["cache_read_rate_rule"] = cacheReadRule
+	rule["reasoning_rate_rule"] = reasoningRule
+	rule["reasoning_tokens"] = reasoningTokens
+	rule["matched"] = lookup.Matched
+	rule["fallback_used"] = lookup.FallbackUsed
+	rule["fallback_model"] = lookup.FallbackModel
+	breakdown.PricingRuleJSON = marshalJSONString(rule)
+	breakdown.CostBreakdownJSON = marshalJSONString(map[string]any{
+		"input_usd":          breakdown.InputUSD,
+		"output_usd":         breakdown.OutputUSD,
+		"cache_creation_usd": breakdown.CacheCreationUSD,
+		"cache_read_usd":     breakdown.CacheReadUSD,
+		"reasoning_usd":      breakdown.ReasoningUSD,
+		"total_usd":          breakdown.TotalUSD,
+	})
 	return breakdown
+}
+
+func parsePricingRates(raw string) map[string]float64 {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	var values map[string]any
+	if err := json.Unmarshal([]byte(raw), &values); err != nil {
+		return nil
+	}
+	result := make(map[string]float64, len(values))
+	for key, value := range values {
+		switch typed := value.(type) {
+		case float64:
+			result[key] = typed
+		case int:
+			result[key] = float64(typed)
+		case json.Number:
+			if parsed, err := typed.Float64(); err == nil {
+				result[key] = parsed
+			}
+		}
+	}
+	return result
+}
+
+func tieredRate(rates map[string]float64, baseKey string, fallback float64, contextWindow int64, tier string) (float64, string) {
+	normalizedTier := normalizePricingTier(tier)
+	bestKey := baseKey
+	bestThreshold := int64(-1)
+	bestTierSpecific := false
+	for key, rate := range rates {
+		if rate <= 0 || !strings.HasPrefix(key, baseKey) {
+			continue
+		}
+		if strings.Contains(key, "_above_1hr") && normalizedTier != "1hr" {
+			continue
+		}
+		keyTier := rateKeyTier(key)
+		if keyTier != "" && keyTier != normalizedTier {
+			continue
+		}
+		threshold := thresholdFromRateKey(key)
+		if threshold > contextWindow {
+			continue
+		}
+		tierSpecific := keyTier != ""
+		if threshold > bestThreshold || (threshold == bestThreshold && tierSpecific && !bestTierSpecific) {
+			bestThreshold = threshold
+			bestKey = key
+			fallback = rate
+			bestTierSpecific = tierSpecific
+		}
+	}
+	return fallback, bestKey
+}
+
+func rateFromMap(rates map[string]float64, key string) float64 {
+	if rates == nil {
+		return 0
+	}
+	return rates[key]
+}
+
+func thresholdFromRateKey(key string) int64 {
+	var best int64
+	parts := strings.Split(key, "_above_")
+	for _, part := range parts[1:] {
+		kIndex := strings.Index(part, "k_tokens")
+		if kIndex < 0 {
+			continue
+		}
+		value, err := strconv.ParseInt(part[:kIndex], 10, 64)
+		if err == nil && value*1000 > best {
+			best = value * 1000
+		}
+	}
+	return best
+}
+
+func rateKeyTier(key string) string {
+	for _, tier := range []string{"priority", "flex", "minimal", "none", "low", "medium", "high", "xhigh", "1hr"} {
+		if strings.HasSuffix(key, "_"+tier) {
+			return tier
+		}
+	}
+	return ""
+}
+
+func normalizePricingTier(tier string) string {
+	tier = strings.ToLower(strings.TrimSpace(tier))
+	switch tier {
+	case "priority", "flex", "minimal", "none", "low", "medium", "high", "xhigh", "1hr":
+		return tier
+	default:
+		return ""
+	}
+}
+
+func marshalJSONString(value any) string {
+	body, err := json.Marshal(value)
+	if err != nil {
+		return ""
+	}
+	return string(body)
 }
 
 func (s *Service) lookupExactOrFuzzy(ctx context.Context, modelID string) *models.ModelPricing {
@@ -274,7 +446,7 @@ func (s *Service) fetchRemote(ctx context.Context) (map[string]litellmModelEntry
 		return nil, fmt.Errorf("read body: %w", err)
 	}
 
-	return parsePricingJSON(body)
+	return parsePricingEntries(body)
 }
 
 func (s *Service) loadEmbedded() (map[string]litellmModelEntry, error) {
@@ -282,10 +454,10 @@ func (s *Service) loadEmbedded() (map[string]litellmModelEntry, error) {
 	if err != nil {
 		return nil, err
 	}
-	return parsePricingJSON(body)
+	return parsePricingEntries(body)
 }
 
-func parsePricingJSON(body []byte) (map[string]litellmModelEntry, error) {
+func parsePricingEntries(body []byte) (map[string]litellmModelEntry, error) {
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(body, &raw); err != nil {
 		return nil, fmt.Errorf("unmarshal json: %w", err)
@@ -300,6 +472,7 @@ func parsePricingJSON(body []byte) (map[string]litellmModelEntry, error) {
 		if err := json.Unmarshal(val, &entry); err != nil {
 			continue
 		}
+		entry.RawJSON = string(val)
 		if entry.InputCostPerToken > 0 || entry.OutputCostPerToken > 0 {
 			entries[key] = entry
 		}
@@ -342,13 +515,15 @@ func (s *Service) upsert(ctx context.Context, entries map[string]litellmModelEnt
 				SupportsVision:            e.SupportsVision,
 				SupportsFunctionCalling:   e.SupportsFunctionCalling,
 				SupportsPromptCaching:     e.SupportsPromptCaching,
+				SupportsReasoning:         e.SupportsReasoning,
+				PricingJSON:               e.RawJSON,
 				FetchedAt:                 now,
 			})
 		}
 
 		if err := s.db.WithContext(ctx).Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "model_id"}},
-			DoUpdates: clause.AssignmentColumns([]string{"litellm_provider", "mode", "max_input_tokens", "max_output_tokens", "input_cost_per_token", "output_cost_per_token", "cache_creation_cost_per_token", "cache_read_cost_per_token", "supports_vision", "supports_function_calling", "supports_prompt_caching", "fetched_at"}),
+			DoUpdates: clause.AssignmentColumns([]string{"litellm_provider", "mode", "max_input_tokens", "max_output_tokens", "input_cost_per_token", "output_cost_per_token", "cache_creation_cost_per_token", "cache_read_cost_per_token", "supports_vision", "supports_function_calling", "supports_prompt_caching", "supports_reasoning", "pricing_json", "fetched_at"}),
 		}).CreateInBatches(batch, batchSize).Error; err != nil {
 			s.logger.Error().Err(err).Int("batch_start", i).Msg("pricing: upsert batch failed")
 			continue
