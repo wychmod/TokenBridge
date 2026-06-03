@@ -1,56 +1,88 @@
 import { useMemo, useState } from "react";
-import { Activity, Plus, Route, Save, Trash2, X } from "lucide-react";
+import { Activity, ArrowDown, ArrowUp, Plus, Route as RouteIcon, Save, Trash2, X } from "lucide-react";
 import clsx from "clsx";
 import { useAdminStore } from "../store/admin-store";
-import type { ModelAliasRecord, RoutingSimulation } from "../store/entities";
+import type { ModelAliasRecord, ProviderRecord, RoutingRuleRecord, RoutingSimulation } from "../store/entities";
+import {
+  addProviderToChain,
+  moveProviderInChain,
+  normalizeProviderRefs,
+  providerLabel,
+  providerValue,
+  removeProviderFromChain
+} from "../utils/routing-ui";
 
-const createEmptyRule = () => ({
-  id: `route-${Date.now()}`,
-  modelPattern: "new-model-*",
-  strategy: "优先转发 + 备用切换",
-  providerChain: ["OpenAI 主线路"],
-  fallbackChain: ["Azure 备用线路"],
-  enabled: true
-});
+type RoutingRuleForm = RoutingRuleRecord;
 
-const createEmptyAlias = (): ModelAliasRecord => ({
-  id: `alias-${Date.now()}`,
-  alias: "gpt-fast",
-  target: "OpenAI 主线路",
-  fallbackChain: ["DeepSeek 节省线路"]
-});
+const SIMULATION_SCOPE = "仅模拟路由决策，未发送上游请求。";
+
+function createEmptyRule(providers: ProviderRecord[] = []): RoutingRuleForm {
+  const primary = firstUsableProvider(providers);
+  const fallback = providers.find((provider) => provider.id !== primary?.id && isUsableProvider(provider));
+  return {
+    id: `route-${Date.now()}`,
+    modelPattern: firstModelPattern(providers),
+    strategy: "priority",
+    providerChain: primary ? [primary.id] : [],
+    fallbackChain: fallback ? [fallback.id] : [],
+    enabled: true
+  };
+}
+
+function createEmptyAlias(providers: ProviderRecord[] = []): ModelAliasRecord {
+  return {
+    id: `alias-${Date.now()}`,
+    alias: "gpt-fast",
+    target: firstModel(providers) ?? "gpt-4o-mini",
+    fallbackChain: []
+  };
+}
+
+function createInitialSimulation(model = "gpt-4o"): RoutingSimulation {
+  return {
+    model,
+    requestedModel: model,
+    key: "未校验 Local Key",
+    format: "openai",
+    target: "等待模拟",
+    fallback: "等待模拟",
+    cost: "未实际请求",
+    ttft: "未实际请求",
+    formatCompatible: true,
+    scope: SIMULATION_SCOPE
+  };
+}
 
 export function RoutingPage() {
-  const { rules, aliases, saveRule, deleteRule, saveAlias, testRouting } = useAdminStore();
+  const { providers, rules, aliases, saveRule, deleteRule, saveAlias, testRouting } = useAdminStore();
+  const providerOptions = useMemo(() => providers, [providers]);
 
   const [viewMode, setViewMode] = useState<"rules" | "aliases">("rules");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [aliasDrawerOpen, setAliasDrawerOpen] = useState(false);
   const [drawerMode, setDrawerMode] = useState<"edit" | "test">("edit");
-  const [form, setForm] = useState<ReturnType<typeof createEmptyRule>>(createEmptyRule());
-  const [aliasForm, setAliasForm] = useState<ModelAliasRecord>(createEmptyAlias());
+  const [form, setForm] = useState<RoutingRuleForm>(() => createEmptyRule(providerOptions));
+  const [aliasForm, setAliasForm] = useState<ModelAliasRecord>(() => createEmptyAlias(providerOptions));
   const [busyAction, setBusyAction] = useState<"save" | "delete" | "test" | "alias" | null>(null);
-  const [simulation, setSimulation] = useState<RoutingSimulation>({
-    model: "gpt-4o",
-    key: "默认本地密钥",
-    format: "openai",
-    target: "等待模拟",
-    fallback: "等待模拟",
-    cost: "-",
-    ttft: "-"
-  });
+  const [simulation, setSimulation] = useState<RoutingSimulation>(() => createInitialSimulation());
 
   const enabledRules = useMemo(() => rules.filter((rule) => rule.enabled).length, [rules]);
   const fallbackRules = useMemo(() => rules.filter((rule) => rule.fallbackChain.length > 0).length, [rules]);
+  const hasProviders = providerOptions.length > 0;
+  const formHasUnknownProviders = hasUnknownProviderRefs([...form.providerChain, ...form.fallbackChain], providerOptions);
+  const aliasHasUnknownProviders = hasUnknownProviderRefs(aliasForm.fallbackChain, providerOptions);
 
-  const openDrawer = (rule?: typeof form, mode: "edit" | "test" = "edit") => {
-    setForm(rule ?? createEmptyRule());
+  const openDrawer = (rule?: RoutingRuleRecord, mode: "edit" | "test" = "edit") => {
+    const next = normalizeRuleForm(rule ?? createEmptyRule(providerOptions), providerOptions);
+    setForm(next);
+    setSimulation(createInitialSimulation(sampleModelFromPattern(next.modelPattern)));
     setDrawerMode(mode);
     setDrawerOpen(true);
   };
 
   const openAliasDrawer = (alias?: ModelAliasRecord) => {
-    setAliasForm(alias ?? createEmptyAlias());
+    const next = alias ?? createEmptyAlias(providerOptions);
+    setAliasForm({ ...next, fallbackChain: normalizeProviderRefs(next.fallbackChain, providerOptions) });
     setAliasDrawerOpen(true);
   };
 
@@ -97,8 +129,8 @@ export function RoutingPage() {
       <div className="section-header">
         <div className="section-header-main">
           <span className="eyebrow">调度策略</span>
-          <h2 className="section-title">路由规则</h2>
-          <p className="section-description">路由决定一个模型请求先走哪条 Provider Chain，失败时按哪个 Fallback Chain 继续尝试。默认只展示关键路径，复杂配置进入抽屉处理。</p>
+          <h2 className="section-title">路由策略</h2>
+          <p className="section-description">请求会先解析模型别名，再用解析后的模型名匹配路由规则，最后按主链路和备用链路选择 Provider。</p>
         </div>
         <div className="section-actions">
           <button type="button" className="btn btn-secondary btn-sm" onClick={() => openAliasDrawer()}>
@@ -110,12 +142,27 @@ export function RoutingPage() {
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="routing-flow" aria-label="路由决策顺序">
+        <FlowStep index="1" title="模型别名" detail="改写模型名" />
+        <FlowStep index="2" title="路由规则" detail="匹配解析后模型" />
+        <FlowStep index="3" title="主链路" detail="选择首个可用 Provider" />
+        <FlowStep index="4" title="备用链路" detail="限流或故障后尝试" />
+      </div>
+
+      <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
         <span className="pill pill-neutral">规则 {rules.length}</span>
         <span className="pill pill-success">已启用 {enabledRules}</span>
         <span className="pill pill-warning">Fallback {fallbackRules}</span>
         <span className="pill pill-info">模型别名 {aliases.length}</span>
+        <span className={clsx("pill", hasProviders ? "pill-success" : "pill-warning")}>Provider {providerOptions.length}</span>
       </div>
+
+      {!hasProviders && (
+        <div className="alert-card">
+          <strong>还没有可选择的 Provider</strong>
+          <p>主链路和备用链路只能从已配置的 Provider 中选择。先在供应商页面添加 Provider 后再创建规则。</p>
+        </div>
+      )}
 
       <div className="tabs" style={{ alignSelf: "flex-start" }}>
         <button type="button" className={clsx("tab", viewMode === "rules" && "active")} onClick={() => setViewMode("rules")}>
@@ -128,51 +175,54 @@ export function RoutingPage() {
 
       {viewMode === "rules" ? (
         <div className="flex-col gap-2 list-animate">
-          {rules.map((rule, index) => (
-            <div
-              key={rule.id}
-              className="list-row"
-              style={{ "--index": index } as React.CSSProperties}
-              role="button"
-              tabIndex={0}
-              aria-label={`编辑路由规则 ${rule.modelPattern}`}
-              onClick={() => openDrawer(rule, "edit")}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                  openDrawer(rule, "edit");
-                }
-              }}
-            >
-              <div className="list-row-main">
-                <div className="flex items-center gap-2">
-                  <span className="term">{rule.modelPattern}</span>
-                  <span className={clsx("pill", rule.enabled ? "pill-success" : "pill-neutral")}>{rule.enabled ? "已启用" : "已停用"}</span>
+          {rules.map((rule, index) => {
+            const normalizedRule = normalizeRuleForm(rule, providerOptions);
+            return (
+              <div
+                key={rule.id}
+                className="list-row"
+                style={{ "--index": index } as React.CSSProperties}
+                role="button"
+                tabIndex={0}
+                aria-label={`编辑路由规则 ${rule.modelPattern}`}
+                onClick={() => openDrawer(rule, "edit")}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    openDrawer(rule, "edit");
+                  }
+                }}
+              >
+                <div className="list-row-main">
+                  <div className="flex items-center gap-2">
+                    <span className="term">{rule.modelPattern}</span>
+                    <span className={clsx("pill", rule.enabled ? "pill-success" : "pill-neutral")}>{rule.enabled ? "已启用" : "已停用"}</span>
+                  </div>
+                  <span className="list-row-meta">匹配解析后的模型 · {rule.strategy || "priority"}</span>
+                  <span className="list-row-sub">
+                    主链路：{formatProviderChain(normalizedRule.providerChain, providerOptions) || "按全局优先级"}
+                    {normalizedRule.fallbackChain.length > 0 && ` · 备用：${formatProviderChain(normalizedRule.fallbackChain, providerOptions)}`}
+                  </span>
                 </div>
-                <span className="list-row-meta">{rule.strategy}</span>
-                <span className="list-row-sub">
-                  主链路：{rule.providerChain.join(" → ") || "未配置"}
-                  {rule.fallbackChain.length > 0 && ` · 备用：${rule.fallbackChain.join(" → ")}`}
-                </span>
+                <div className="list-row-actions">
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={(e) => { e.stopPropagation(); openDrawer(rule, "test"); }}>
+                    <Activity size={14} /> 模拟
+                  </button>
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={(e) => { e.stopPropagation(); openDrawer(rule, "edit"); }}>
+                    编辑
+                  </button>
+                  <button type="button" className="btn btn-danger btn-sm" onClick={(e) => { e.stopPropagation(); void handleDelete(rule.id); }} aria-label={`删除路由规则 ${rule.modelPattern}`}>
+                    <Trash2 size={14} />
+                  </button>
+                </div>
               </div>
-              <div className="list-row-actions">
-                <button type="button" className="btn btn-secondary btn-sm" onClick={(e) => { e.stopPropagation(); openDrawer(rule, "test"); }}>
-                  <Activity size={14} /> 模拟
-                </button>
-                <button type="button" className="btn btn-secondary btn-sm" onClick={(e) => { e.stopPropagation(); openDrawer(rule, "edit"); }}>
-                  编辑
-                </button>
-                <button type="button" className="btn btn-danger btn-sm" onClick={(e) => { e.stopPropagation(); void handleDelete(rule.id); }} aria-label={`删除路由规则 ${rule.modelPattern}`}>
-                  <Trash2 size={14} />
-                </button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
 
           {rules.length === 0 && (
             <div className="empty-state">
               <span className="empty-state-title">暂无路由规则</span>
-              <span className="empty-state-desc">先创建一个模型匹配规则，把请求明确分发到主 Provider 和备用 Provider。</span>
+              <span className="empty-state-desc">创建规则后，匹配到的模型请求会按指定 Provider 链路转发。</span>
               <div className="empty-state-actions">
                 <button type="button" className="btn btn-primary btn-sm" onClick={() => openDrawer()}>
                   <Plus size={14} /> 新建规则
@@ -205,7 +255,7 @@ export function RoutingPage() {
                   <span className="pill pill-info">Alias</span>
                 </div>
                 <span className="list-row-meta">目标模型：{alias.target}</span>
-                <span className="list-row-sub">备用：{alias.fallbackChain.join(" → ") || "未配置"}</span>
+                <span className="list-row-sub">备用链路：{formatProviderChain(normalizeProviderRefs(alias.fallbackChain, providerOptions), providerOptions) || "未配置"}</span>
               </div>
               <div className="list-row-actions">
                 <button type="button" className="btn btn-secondary btn-sm" onClick={(e) => { e.stopPropagation(); openAliasDrawer(alias); }}>
@@ -218,7 +268,7 @@ export function RoutingPage() {
           {aliases.length === 0 && (
             <div className="empty-state">
               <span className="empty-state-title">暂无模型别名</span>
-              <span className="empty-state-desc">用别名把业务侧模型名映射到真实上游模型，减少客户端改造成本。</span>
+              <span className="empty-state-desc">别名只负责把业务侧模型名改写成真实模型名，Provider 仍由路由规则决定。</span>
               <div className="empty-state-actions">
                 <button type="button" className="btn btn-primary btn-sm" onClick={() => openAliasDrawer()}>
                   <Plus size={14} /> 新建别名
@@ -236,7 +286,7 @@ export function RoutingPage() {
             <div className="drawer-header">
               <div>
                 <h3 className="section-title">{form.modelPattern}</h3>
-                <p className="section-description">{drawerMode === "edit" ? "配置模型匹配、主链路和备用链路。" : "用真实输入模拟一次路由决策。"}</p>
+                <p className="section-description">{drawerMode === "edit" ? "规则匹配解析后的模型名；Provider 链路只能从已配置供应商中选择。" : "模拟当前配置的路由决策，不实际请求上游。"}</p>
               </div>
               <button type="button" className="btn btn-ghost btn-icon" onClick={closeDrawer} aria-label="关闭路由规则配置">
                 <X size={16} />
@@ -249,7 +299,7 @@ export function RoutingPage() {
                   编辑规则
                 </button>
                 <button type="button" className={clsx("tab", drawerMode === "test" && "active")} onClick={() => setDrawerMode("test")}>
-                  路由模拟
+                  决策模拟
                 </button>
               </div>
             </div>
@@ -260,47 +310,50 @@ export function RoutingPage() {
                   <div className="form-field span-2">
                     <label className="form-label">模型匹配规则</label>
                     <input className="form-control" value={form.modelPattern} onChange={(e) => setForm({ ...form, modelPattern: e.target.value })} placeholder="例如：gpt-4o* / claude-*" />
-                    <span className="form-hint">支持精确模型名和通配模式。更具体的规则应放在更高优先级。</span>
+                    <span className="form-hint">匹配的是别名解析后的模型名；支持精确模型名和末尾 * 通配。</span>
                   </div>
 
-                  <div className="form-field span-2">
-                    <label className="form-label">分发策略</label>
-                    <input className="form-control" value={form.strategy} onChange={(e) => setForm({ ...form, strategy: e.target.value })} placeholder="例如：优先转发 + 备用切换" />
+                  <div className="form-field">
+                    <label className="form-label">策略标识</label>
+                    <select className="form-control" value={form.strategy} onChange={(e) => setForm({ ...form, strategy: e.target.value })}>
+                      <option value="priority">priority：按链路顺序</option>
+                    </select>
                   </div>
 
-                  <div className="form-field span-2">
-                    <label className="form-label">主链路顺序</label>
-                    <input
-                      className="form-control"
-                      value={form.providerChain.join(" → ")}
-                      onChange={(e) => setForm({ ...form, providerChain: e.target.value.split(/[→,]/).map((s) => s.trim()).filter(Boolean) })}
-                      placeholder="例如：OpenAI 主线路 → Azure 备用线路"
-                    />
-                    <span className="form-hint">主链路从左到右尝试，建议把稳定且成本可控的 Provider 放在前面。</span>
-                  </div>
-
-                  <div className="form-field span-2">
-                    <label className="form-label">备用链路顺序</label>
-                    <input
-                      className="form-control"
-                      value={form.fallbackChain.join(" → ")}
-                      onChange={(e) => setForm({ ...form, fallbackChain: e.target.value.split(/[→,]/).map((s) => s.trim()).filter(Boolean) })}
-                      placeholder="例如：Azure 备用线路 → OpenRouter 备用出口"
-                    />
-                    <span className="form-hint">当上游返回 429、5xx 或网络错误时，系统会按备用链路继续尝试。</span>
-                  </div>
-
-                  <div className="form-field span-2">
+                  <div className="form-field">
                     <label className="form-label" style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
                       <input type="checkbox" checked={form.enabled} onChange={(e) => setForm({ ...form, enabled: e.target.checked })} />
                       <span>启用此规则</span>
                     </label>
                   </div>
 
+                  <ProviderChainEditor
+                    className="span-2"
+                    label="主链路顺序"
+                    hint="第一个可用且支持该模型的 Provider 会被选中。"
+                    prefix="主"
+                    tone="primary"
+                    chain={form.providerChain}
+                    providers={providerOptions}
+                    onChange={(providerChain) => setForm({ ...form, providerChain })}
+                  />
+
+                  <ProviderChainEditor
+                    className="span-2"
+                    label="备用链路顺序"
+                    hint="仅在 429、5xx 或网络错误时继续尝试。"
+                    prefix="备"
+                    tone="warning"
+                    chain={form.fallbackChain}
+                    providers={providerOptions}
+                    onChange={(fallbackChain) => setForm({ ...form, fallbackChain })}
+                  />
+
                   <div className="detail-card span-2">
                     <strong>链路预览</strong>
-                    <div className="route-chain mt-4">{renderChain(form.providerChain, "primary")}</div>
-                    <div className="route-chain mt-4">{renderChain(form.fallbackChain, "warning")}</div>
+                    <RoutePreview title="主链路" prefix="主" tone="primary" chain={form.providerChain} providers={providerOptions} />
+                    <RoutePreview title="备用链路" prefix="备" tone="warning" chain={form.fallbackChain} providers={providerOptions} />
+                    {formHasUnknownProviders && <span className="form-hint danger-text">存在未匹配到的 Provider，请移除后重新选择。</span>}
                   </div>
                 </div>
               ) : (
@@ -309,10 +362,6 @@ export function RoutingPage() {
                     <div className="form-field">
                       <label className="form-label">测试模型</label>
                       <input className="form-control" value={simulation.model} onChange={(e) => setSimulation({ ...simulation, model: e.target.value })} placeholder="例如：gpt-4o" />
-                    </div>
-                    <div className="form-field">
-                      <label className="form-label">本地密钥</label>
-                      <input className="form-control" value={simulation.key} onChange={(e) => setSimulation({ ...simulation, key: e.target.value })} placeholder="例如：tb-..." />
                     </div>
                     <div className="form-field">
                       <label className="form-label">请求格式</label>
@@ -324,31 +373,33 @@ export function RoutingPage() {
                   </div>
 
                   <button type="button" className="btn btn-primary" style={{ alignSelf: "flex-start" }} onClick={() => void runSimulation()} disabled={busyAction === "test"}>
-                    <Route size={14} /> {busyAction === "test" ? "模拟中..." : "执行模拟"}
+                    <RouteIcon size={14} /> {busyAction === "test" ? "模拟中..." : "执行决策模拟"}
                   </button>
 
                   <div className="detail-grid">
                     <div className="detail-card">
-                      <strong>目标线路</strong>
+                      <strong>请求模型</strong>
+                      <span>{simulation.requestedModel ?? simulation.model}</span>
+                    </div>
+                    <div className="detail-card">
+                      <strong>解析后模型</strong>
+                      <span>{simulation.model}</span>
+                    </div>
+                    <div className="detail-card">
+                      <strong>命中 Provider</strong>
                       <span>{simulation.target}</span>
                     </div>
                     <div className="detail-card">
-                      <strong>备用线路</strong>
+                      <strong>备用链路</strong>
                       <span>{simulation.fallback}</span>
-                    </div>
-                    <div className="detail-card">
-                      <strong>预计费用</strong>
-                      <span>{simulation.cost}</span>
-                    </div>
-                    <div className="detail-card">
-                      <strong>首字返回时间</strong>
-                      <span>{simulation.ttft}</span>
                     </div>
                   </div>
 
-                  <div className="alert-card">
-                    <strong>模拟结果怎么读</strong>
-                    <p>目标线路是本次请求会先命中的 Provider；备用线路表示发生可重试错误时的后续尝试顺序。</p>
+                  <div className={clsx("alert-card", simulation.formatCompatible === false && "warning")}>
+                    <strong>
+                      {simulation.formatCompatible === false ? "请求格式与 Provider 不兼容" : "模拟范围"}
+                    </strong>
+                    <p>{simulation.formatCompatible === false ? simulation.formatWarning : simulation.scope ?? SIMULATION_SCOPE}</p>
                   </div>
                 </div>
               )}
@@ -356,7 +407,7 @@ export function RoutingPage() {
 
             {drawerMode === "edit" && (
               <div className="drawer-footer">
-                <button type="button" className="btn btn-primary" onClick={() => void handleSave()} disabled={busyAction !== null}>
+                <button type="button" className="btn btn-primary" onClick={() => void handleSave()} disabled={busyAction !== null || !form.modelPattern.trim() || formHasUnknownProviders}>
                   <Save size={14} /> 保存规则
                 </button>
                 <button type="button" className="btn btn-danger" onClick={() => void handleDelete(form.id)} disabled={busyAction !== null}>
@@ -375,7 +426,7 @@ export function RoutingPage() {
             <div className="drawer-header">
               <div>
                 <h3 className="section-title">{aliasForm.alias}</h3>
-                <p className="section-description">把业务侧模型名映射到真实上游模型名。</p>
+                <p className="section-description">别名只改写模型名；改写后的目标模型会继续进入路由规则匹配。</p>
               </div>
               <button type="button" className="btn btn-ghost btn-icon" onClick={() => setAliasDrawerOpen(false)} aria-label="关闭模型别名配置">
                 <X size={16} />
@@ -388,22 +439,25 @@ export function RoutingPage() {
                   <input className="form-control" value={aliasForm.alias} onChange={(e) => setAliasForm({ ...aliasForm, alias: e.target.value })} placeholder="例如：gpt-fast" />
                 </div>
                 <div className="form-field span-2">
-                  <label className="form-label">目标模型或 Provider</label>
+                  <label className="form-label">目标模型</label>
                   <input className="form-control" value={aliasForm.target} onChange={(e) => setAliasForm({ ...aliasForm, target: e.target.value })} placeholder="例如：gpt-4o-mini" />
+                  <span className="form-hint">这里填写真实模型名，不是 Provider。Provider 由路由规则或默认优先级决定。</span>
                 </div>
-                <div className="form-field span-2">
-                  <label className="form-label">备用链路</label>
-                  <input
-                    className="form-control"
-                    value={aliasForm.fallbackChain.join(" → ")}
-                    onChange={(e) => setAliasForm({ ...aliasForm, fallbackChain: e.target.value.split(/[→,]/).map((s) => s.trim()).filter(Boolean) })}
-                    placeholder="例如：DeepSeek 节省线路 → OpenRouter"
-                  />
-                </div>
+                <ProviderChainEditor
+                  className="span-2"
+                  label="别名备用链路"
+                  hint="当目标模型没有命中路由规则的备用链路时使用。"
+                  prefix="备"
+                  tone="warning"
+                  chain={aliasForm.fallbackChain}
+                  providers={providerOptions}
+                  onChange={(fallbackChain) => setAliasForm({ ...aliasForm, fallbackChain })}
+                />
+                {aliasHasUnknownProviders && <span className="form-hint danger-text span-2">存在未匹配到的 Provider，请移除后重新选择。</span>}
               </div>
             </div>
             <div className="drawer-footer">
-              <button type="button" className="btn btn-primary" onClick={() => void handleAliasSave()} disabled={busyAction !== null}>
+              <button type="button" className="btn btn-primary" onClick={() => void handleAliasSave()} disabled={busyAction !== null || !aliasForm.alias.trim() || !aliasForm.target.trim() || aliasHasUnknownProviders}>
                 <Save size={14} /> 保存别名
               </button>
             </div>
@@ -414,13 +468,160 @@ export function RoutingPage() {
   );
 }
 
-function renderChain(items: string[], tone: "primary" | "warning") {
-  if (!items.length) {
-    return <span className="chain-step">未配置</span>;
-  }
-  return items.map((item, index) => (
-    <span key={`${item}-${index}`} className={`chain-step ${tone}`}>
-      {index + 1}. {item}
-    </span>
-  ));
+function FlowStep({ index, title, detail }: { index: string; title: string; detail: string }) {
+  return (
+    <div className="routing-flow-step">
+      <span className="routing-flow-index">{index}</span>
+      <strong>{title}</strong>
+      <span>{detail}</span>
+    </div>
+  );
+}
+
+function ProviderChainEditor({
+  className,
+  label,
+  hint,
+  prefix,
+  tone,
+  chain,
+  providers,
+  onChange
+}: {
+  className?: string;
+  label: string;
+  hint: string;
+  prefix: string;
+  tone: "primary" | "warning";
+  chain: string[];
+  providers: ProviderRecord[];
+  onChange: (next: string[]) => void;
+}) {
+  const [selectedProvider, setSelectedProvider] = useState("");
+  const usableProviders = providers.filter(isUsableProvider);
+
+  const addSelectedProvider = () => {
+    onChange(addProviderToChain(chain, selectedProvider));
+    setSelectedProvider("");
+  };
+
+  return (
+    <div className={clsx("form-field provider-chain-field", className)}>
+      <label className="form-label">{label}</label>
+      <span className="form-hint">{hint}</span>
+      <div className="provider-chain-picker">
+        <select className="form-control" value={selectedProvider} onChange={(event) => setSelectedProvider(event.target.value)} disabled={usableProviders.length === 0}>
+          <option value="">{usableProviders.length === 0 ? "暂无可用 Provider" : "选择 Provider"}</option>
+          {usableProviders.map((provider) => (
+            <option key={provider.id} value={provider.id}>
+              {provider.name}
+            </option>
+          ))}
+        </select>
+        <button type="button" className="btn btn-secondary btn-sm" onClick={addSelectedProvider} disabled={!selectedProvider || chain.includes(selectedProvider)}>
+          <Plus size={14} /> 添加
+        </button>
+      </div>
+
+      <div className="provider-chain-list">
+        {chain.length === 0 && <span className="chain-empty">未指定，按默认 Provider 优先级解析</span>}
+        {chain.map((providerRef, index) => {
+          const provider = findProvider(providerRef, providers);
+          return (
+            <div key={`${providerRef}-${index}`} className={clsx("provider-chain-row", !provider && "invalid")}>
+              <span className={clsx("chain-order", tone)}>{prefix}{index + 1}</span>
+              <div className="provider-chain-row-main">
+                <strong>{provider ? provider.name : providerRef}</strong>
+                <span>{provider ? providerMeta(provider) : "未找到匹配 Provider"}</span>
+              </div>
+              <div className="provider-chain-actions">
+                <button type="button" className="btn btn-ghost btn-icon" onClick={() => onChange(moveProviderInChain(chain, index, -1))} disabled={index === 0} aria-label={`上移 ${providerLabel(providerRef, providers)}`}>
+                  <ArrowUp size={14} />
+                </button>
+                <button type="button" className="btn btn-ghost btn-icon" onClick={() => onChange(moveProviderInChain(chain, index, 1))} disabled={index === chain.length - 1} aria-label={`下移 ${providerLabel(providerRef, providers)}`}>
+                  <ArrowDown size={14} />
+                </button>
+                <button type="button" className="btn btn-ghost btn-icon" onClick={() => onChange(removeProviderFromChain(chain, index))} aria-label={`移除 ${providerLabel(providerRef, providers)}`}>
+                  <X size={14} />
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function RoutePreview({ title, prefix, tone, chain, providers }: { title: string; prefix: string; tone: "primary" | "warning"; chain: string[]; providers: ProviderRecord[] }) {
+  return (
+    <div className="route-preview-lane">
+      <span className="route-preview-title">{title}</span>
+      <div className="route-chain">
+        {chain.length === 0 ? (
+          <span className="chain-step">未指定</span>
+        ) : (
+          chain.map((item, index) => (
+            <span key={`${item}-${index}`} className={`chain-step ${tone}`}>
+              {prefix}{index + 1} · {providerLabel(item, providers)}
+            </span>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function normalizeRuleForm(rule: RoutingRuleRecord, providers: ProviderRecord[]): RoutingRuleForm {
+  return {
+    ...rule,
+    modelPattern: rule.modelPattern || rule.model_pattern || "*",
+    strategy: rule.strategy || "priority",
+    providerChain: normalizeProviderRefs(rule.providerChain, providers).filter(Boolean),
+    fallbackChain: normalizeProviderRefs(rule.fallbackChain, providers).filter(Boolean),
+    enabled: rule.enabled ?? true
+  };
+}
+
+function formatProviderChain(chain: string[], providers: ProviderRecord[]): string {
+  return chain.map((provider) => providerLabel(provider, providers)).join(" -> ");
+}
+
+function hasUnknownProviderRefs(refs: string[], providers: ProviderRecord[]): boolean {
+  return refs.some((ref) => !findProvider(ref, providers));
+}
+
+function findProvider(ref: string, providers: ProviderRecord[]): ProviderRecord | undefined {
+  const value = providerValue(ref, providers);
+  return providers.find((provider) => provider.id === value || provider.name === value);
+}
+
+function isUsableProvider(provider: ProviderRecord): boolean {
+  return provider.enabled !== false && provider.status !== "disabled" && provider.status !== "deleted";
+}
+
+function firstUsableProvider(providers: ProviderRecord[]): ProviderRecord | undefined {
+  return providers.find(isUsableProvider) ?? providers[0];
+}
+
+function firstModel(providers: ProviderRecord[]): string | undefined {
+  return providers.flatMap((provider) => provider.models).find(Boolean);
+}
+
+function firstModelPattern(providers: ProviderRecord[]): string {
+  const model = firstModel(providers);
+  if (!model) return "new-model-*";
+  const family = model.split("-").slice(0, 2).join("-");
+  return family ? `${family}*` : model;
+}
+
+function sampleModelFromPattern(pattern: string): string {
+  const trimmed = pattern.trim();
+  if (!trimmed || trimmed === "*") return "gpt-4o";
+  return trimmed.endsWith("*") ? `${trimmed.slice(0, -1)}mini` : trimmed;
+}
+
+function providerMeta(provider: ProviderRecord): string {
+  const models = provider.models.length > 0 ? `${provider.models.length} 个模型` : "未限定模型";
+  return `${provider.type} · 优先级 ${provider.priority || "-"} · ${models}`;
 }

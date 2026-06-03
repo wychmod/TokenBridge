@@ -1,8 +1,9 @@
 import { Area, AreaChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ArrowUpRight, CheckCircle2, Zap } from "lucide-react";
+import { AlertTriangle, ArrowUpRight, CheckCircle2, KeyRound, Network, Route, Zap } from "lucide-react";
 import { Link } from "react-router-dom";
 import { api } from "../utils/api";
+import { providerNeedsAlert } from "../utils/dashboard-alerts";
 
 type DashboardPayload = {
   overview: {
@@ -134,7 +135,7 @@ export function DashboardPage() {
       });
     }
 
-    const unhealthyProviders = data.provider_health?.filter((p) => p.status !== "healthy");
+    const unhealthyProviders = data.provider_health?.filter((p) => providerNeedsAlert(p.status));
     if (unhealthyProviders?.length) {
       items.push({
         level: "danger",
@@ -177,6 +178,7 @@ export function DashboardPage() {
   if (loading) {
     return (
       <div className="flex-col gap-5">
+        <DashboardHero data={null} />
         <section className="kpi-grid">
           {Array.from({ length: 8 }).map((_, i) => (
             <div key={i} className="kpi-card" style={{ minHeight: 100 }}>
@@ -207,17 +209,22 @@ export function DashboardPage() {
 
   if (error) {
     return (
-      <div className="empty-state" style={{ minHeight: 400 }}>
-        <Zap size={32} style={{ color: "var(--danger)", opacity: 0.6 }} />
-        <span className="empty-state-title" style={{ color: "var(--danger)" }}>数据加载失败</span>
-        <span className="empty-state-desc">{error}，请检查后端服务是否正常运行。</span>
-        <button type="button" className="btn btn-primary btn-sm" onClick={() => window.location.reload()}>重新加载</button>
+      <div className="flex-col gap-5">
+        <DashboardHero data={null} />
+        <div className="empty-state" style={{ minHeight: 340 }}>
+          <Zap size={32} style={{ color: "var(--danger)", opacity: 0.6 }} />
+          <span className="empty-state-title" style={{ color: "var(--danger)" }}>数据加载失败</span>
+          <span className="empty-state-desc">{error}，请检查后端服务是否正常运行。</span>
+          <button type="button" className="btn btn-primary btn-sm" onClick={() => window.location.reload()}>重新加载</button>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="flex-col gap-5">
+      <DashboardHero data={data} />
+
       {/* KPI Row */}
       <section className="kpi-grid">
         {kpis.length > 0 ? (
@@ -383,6 +390,70 @@ export function DashboardPage() {
         )}
       </section>
     </div>
+  );
+}
+
+function DashboardHero({ data }: { data: DashboardPayload | null }) {
+  const healthyProviders = (data?.provider_health ?? []).filter((provider) => provider.status === "healthy").length;
+
+  return (
+    <section className="dashboard-hero hero-band-dark">
+      <div className="hero-sticky-note note-pink" />
+      <div className="hero-sticky-note note-green" />
+      <div className="hero-sticky-note note-yellow" />
+      <div className="hero-wire hero-wire-left" />
+      <div className="hero-wire hero-wire-right" />
+      <div className="dashboard-hero__copy">
+        <span className="eyebrow">Local AI Gateway</span>
+        <h2>TokenBridge 工作台</h2>
+        <p>
+          一个本地控制面板统一管理 Provider、Local Key、路由策略、成本和运行日志。先看链路健康，再进入需要处理的配置面。
+        </p>
+        <div className="hero-action-row">
+          <Link className="btn btn-primary" to="/quick-setup">接入工具</Link>
+          <Link className="btn btn-secondary-on-dark" to="/providers">配置 Provider</Link>
+        </div>
+      </div>
+      <div className="workspace-mockup-card dashboard-hero__mockup" aria-label="TokenBridge workspace mockup">
+        <div className="workspace-mockup__bar">
+          <span className="workspace-dot red" />
+          <span className="workspace-dot yellow" />
+          <span className="workspace-dot green" />
+          <strong>Ramp HQ · Gateway Board</strong>
+        </div>
+        <div className="workspace-mockup__grid">
+          <article>
+            <span><Network size={14} /> Providers</span>
+            <strong>{data?.overview.providers ?? 0}</strong>
+            <em>{healthyProviders} online</em>
+          </article>
+          <article>
+            <span><KeyRound size={14} /> Local Keys</span>
+            <strong>{data?.overview.keys ?? 0}</strong>
+            <em>budget guarded</em>
+          </article>
+          <article>
+            <span><Route size={14} /> Routing</span>
+            <strong>{data?.overview.rules ?? 0}</strong>
+            <em>{data?.log_stats.fallbacks ?? 0} fallback</em>
+          </article>
+        </div>
+        <div className="workspace-kanban">
+          <div>
+            <span>Healthy</span>
+            <strong>{((data?.overview.usage.success_rate ?? 0) * 100).toFixed(1)}%</strong>
+          </div>
+          <div>
+            <span>Cost</span>
+            <strong>${(data?.overview.usage.total_cost_usd ?? 0).toFixed(2)}</strong>
+          </div>
+          <div>
+            <span>Latency</span>
+            <strong>{data?.log_stats.avg_latency_ms ?? 0}ms</strong>
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
 

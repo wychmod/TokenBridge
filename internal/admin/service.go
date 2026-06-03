@@ -114,7 +114,7 @@ func (s *Service) Dashboard(ctx context.Context) (DashboardData, error) {
 	providers, err := s.providers.List(ctx)
 	if err == nil {
 		for _, item := range providers {
-			providerHealth = append(providerHealth, provider.HealthCheckResult{Status: item.Status, LatencyMS: 0, Models: nil, Message: item.Name})
+			providerHealth = append(providerHealth, provider.HealthCheckResult{Status: dashboardProviderHealthStatus(item.Enabled, item.Status), LatencyMS: 0, Models: nil, Message: item.Name})
 		}
 	}
 	alerts := []map[string]string{}
@@ -162,4 +162,14 @@ func (s *Service) Analytics(ctx context.Context, days int) (AnalyticsData, error
 		return AnalyticsData{}, err
 	}
 	return AnalyticsData{Summary: summary, Trend: trend, ProviderBreakdown: breakdown, ModelBreakdown: modelBreakdown, KeyBreakdown: keyBreakdown, LogStats: logStats}, nil
+}
+
+func dashboardProviderHealthStatus(enabled bool, status string) string {
+	if !enabled || status == "disabled" || status == "deleted" {
+		return "disabled"
+	}
+	if status == "warning" || status == "blocked" {
+		return status
+	}
+	return "healthy"
 }

@@ -41,12 +41,16 @@ type TestInput struct {
 }
 
 type TestResult struct {
-	ResolvedModel string   `json:"resolved_model"`
-	ProviderID    string   `json:"provider_id"`
-	Strategy      string   `json:"strategy"`
-	FallbackChain []string `json:"fallback_chain"`
-	EstimatedCost string   `json:"estimated_cost"`
-	EstimatedTTFT string   `json:"estimated_ttft"`
+	ResolvedModel    string   `json:"resolved_model"`
+	ProviderID       string   `json:"provider_id"`
+	ProviderName     string   `json:"provider_name"`
+	Strategy         string   `json:"strategy"`
+	FallbackChain    []string `json:"fallback_chain"`
+	EstimatedCost    string   `json:"estimated_cost"`
+	EstimatedTTFT    string   `json:"estimated_ttft"`
+	FormatCompatible bool     `json:"format_compatible"`
+	FormatWarning    string   `json:"format_warning,omitempty"`
+	SimulationScope  string   `json:"simulation_scope"`
 }
 
 type Service struct {
@@ -139,7 +143,26 @@ func (s *Service) Simulate(ctx context.Context, input TestInput) (TestResult, er
 	if err != nil {
 		return TestResult{}, err
 	}
-	return TestResult{ResolvedModel: decision.Model, ProviderID: decision.Provider.ID, Strategy: decision.Strategy, FallbackChain: decision.Fallback, EstimatedCost: "$0.012 - $0.024", EstimatedTTFT: "180ms - 260ms"}, nil
+	formatCompatible := true
+	formatWarning := ""
+	if strings.TrimSpace(input.Format) != "" {
+		if err := provider.ValidateFormatCompatibility(decision.Provider.Type, input.Format); err != nil {
+			formatCompatible = false
+			formatWarning = err.Error()
+		}
+	}
+	return TestResult{
+		ResolvedModel:    decision.Model,
+		ProviderID:       decision.Provider.ID,
+		ProviderName:     decision.Provider.Name,
+		Strategy:         decision.Strategy,
+		FallbackChain:    decision.Fallback,
+		EstimatedCost:    "未实际请求",
+		EstimatedTTFT:    "未实际请求",
+		FormatCompatible: formatCompatible,
+		FormatWarning:    formatWarning,
+		SimulationScope:  "仅模拟路由决策，未发送上游请求；不会校验 Local Key 权限、实际费用或真实延迟。",
+	}, nil
 }
 
 func (s *Service) resolveAlias(ctx context.Context, model string) (string, []string) {

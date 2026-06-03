@@ -22,6 +22,7 @@ import {
   providerTypeLabelMap,
   valueFromLabel
 } from "./labels";
+import { providerLabel } from "../utils/routing-ui";
 
 type NoticeTone = "success" | "warning" | "info";
 
@@ -320,7 +321,7 @@ export const useAdminStore = create<AdminState>((set, get) => ({
       get().pushNotice({ tone: "warning", title: "路由模拟失败", message: result.error ?? "后端未能完成路由模拟。" });
       return null;
     }
-    const simulation = mapRoutingSimulation(result.data, input);
+    const simulation = mapRoutingSimulation(result.data, input, get().providers);
     get().pushNotice({ tone: "success", title: "路由模拟完成", message: `${input.model} 将分发到 ${simulation.target}。` });
     return simulation;
   },
@@ -432,10 +433,14 @@ type RoutingRuleApiRecord = {
 type RoutingTestApiRecord = {
   resolved_model: string;
   provider_id: string;
+  provider_name?: string;
   strategy: string;
   fallback_chain: string[];
   estimated_cost: string;
   estimated_ttft: string;
+  format_compatible?: boolean;
+  format_warning?: string;
+  simulation_scope?: string;
 };
 
 type ModelAliasApiRecord = {
@@ -577,9 +582,9 @@ function mapRuleFromApi(record: RoutingRuleApiRecord): RoutingRuleRecord {
     modelPattern: record.model_pattern ?? "*",
     strategy: record.strategy ?? "priority",
     provider_chain: record.provider_chain,
-    providerChain: parseJSONList(record.provider_chain).map((provider) => labelFromMap(providerNameLabelMap, provider)),
+    providerChain: parseJSONList(record.provider_chain),
     fallback_chain: record.fallback_chain,
-    fallbackChain: parseJSONList(record.fallback_chain).map((provider) => labelFromMap(providerNameLabelMap, provider)),
+    fallbackChain: parseJSONList(record.fallback_chain),
     enabled: record.enabled ?? true
   };
 }
@@ -588,8 +593,8 @@ function mapRuleToApi(record: RoutingRuleRecord) {
   return {
     model_pattern: record.modelPattern,
     strategy: record.strategy,
-    provider_chain: record.providerChain.map((provider) => valueFromLabel(providerNameLabelMap, provider)),
-    fallback_chain: record.fallbackChain.map((provider) => valueFromLabel(providerNameLabelMap, provider)),
+    provider_chain: record.providerChain,
+    fallback_chain: record.fallbackChain,
     enabled: record.enabled
   };
 }
@@ -598,17 +603,17 @@ function mapAliasFromApi(record: ModelAliasApiRecord): ModelAliasRecord {
   return {
     id: record.id,
     alias: record.alias,
-    target: labelFromMap(providerNameLabelMap, record.target),
+    target: record.target,
     fallback_chain: record.fallback_chain,
-    fallbackChain: parseJSONList(record.fallback_chain).map((provider) => labelFromMap(providerNameLabelMap, provider))
+    fallbackChain: parseJSONList(record.fallback_chain)
   };
 }
 
 function mapAliasToApi(record: ModelAliasRecord) {
   return {
     alias: record.alias,
-    target: valueFromLabel(providerNameLabelMap, record.target),
-    fallback_chain: record.fallbackChain.map((provider) => valueFromLabel(providerNameLabelMap, provider))
+    target: record.target,
+    fallback_chain: record.fallbackChain
   };
 }
 
@@ -649,15 +654,25 @@ function mapSettingsToApi(record: SettingsRecord) {
   };
 }
 
-function mapRoutingSimulation(record: RoutingTestApiRecord, input: { model: string; localKey: string; format: string }): RoutingSimulation {
+function mapRoutingSimulation(record: RoutingTestApiRecord, input: { model: string; localKey: string; format: string }, providers: ProviderRecord[]): RoutingSimulation {
+  const fallbackChain = record.fallback_chain ?? [];
+  const fallbackLabels = fallbackChain.map((provider) => providerLabel(provider, providers));
+  const targetLabel = providerLabel(record.provider_id || record.provider_name || "", providers);
   return {
     model: record.resolved_model || input.model,
+    requestedModel: input.model,
     key: input.localKey,
     format: input.format,
-    target: record.provider_id,
-    fallback: record.fallback_chain?.length ? record.fallback_chain.join(" → ") : "无",
-    cost: record.estimated_cost,
-    ttft: record.estimated_ttft
+    target: targetLabel === record.provider_id && record.provider_name ? record.provider_name : targetLabel,
+    fallback: fallbackLabels.length ? fallbackLabels.join(" -> ") : "无",
+    cost: record.estimated_cost || "未实际请求",
+    ttft: record.estimated_ttft || "未实际请求",
+    providerId: record.provider_id,
+    providerName: record.provider_name,
+    fallbackChain: fallbackLabels,
+    formatCompatible: record.format_compatible ?? true,
+    formatWarning: record.format_warning ?? "",
+    scope: record.simulation_scope ?? "仅模拟路由决策，未发送上游请求。"
   };
 }
 

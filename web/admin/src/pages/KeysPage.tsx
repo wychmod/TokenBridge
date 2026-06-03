@@ -4,6 +4,7 @@ import clsx from "clsx";
 import { useAdminStore } from "../store/admin-store";
 import { keyStatusMap } from "../store/labels";
 import type { LocalKeyRecord } from "../store/entities";
+import { dateInputToExpiryISOString, expiryISOStringToDateInput, formatLocalKeyExpiryLabel } from "../utils/local-key-expiry";
 
 const createEmptyKey = (): LocalKeyRecord => ({
   id: `key-${Date.now()}`,
@@ -11,9 +12,9 @@ const createEmptyKey = (): LocalKeyRecord => ({
   displayKey: `tb-${Math.random().toString(36).slice(2, 6)}****${Math.random().toString(36).slice(2, 6)}`,
   allowedModels: [],
   allowedProviders: [],
-  monthlyBudget: 100,
+  monthlyBudget: 0,
   currentSpend: 0,
-  tokenBudget: 5000000,
+  tokenBudget: 0,
   currentTokens: 0,
   enabled: true,
   status: "active" as const,
@@ -21,6 +22,12 @@ const createEmptyKey = (): LocalKeyRecord => ({
 });
 
 const unique = (items: string[]) => Array.from(new Set(items.filter(Boolean)));
+const budgetUsagePercent = (used: number, budget: number) => (budget > 0 ? Math.min(100, Math.round((used / budget) * 100)) : 0);
+const budgetUsageLabel = (used: number, budget: number) => (budget > 0 ? `${budgetUsagePercent(used, budget)}%` : "无限制");
+const monthlyBudgetLabel = (budget: number) => (budget > 0 ? `$${budget}` : "无限制");
+const tokenBudgetLabel = (budget: number) => (budget > 0 ? budget.toLocaleString() : "无限制");
+const parseBudgetNumber = (value: string) => Math.max(0, Number(value) || 0);
+const parseTokenBudget = (value: string) => Math.max(0, Math.floor(Number(value) || 0));
 
 export function KeysPage() {
   const { keys, providers, selectedKeyId, setSelectedKey, saveKey, rotateKey, revokeKey, extendKey, pushNotice } = useAdminStore();
@@ -29,6 +36,7 @@ export function KeysPage() {
   const [form, setForm] = useState<LocalKeyRecord>(createEmptyKey());
   const [expiresAt, setExpiresAt] = useState("");
   const [busyAction, setBusyAction] = useState<"save" | "rotate" | "extend" | "revoke" | null>(null);
+  const [revokeCandidate, setRevokeCandidate] = useState<LocalKeyRecord | null>(null);
 
   const active = useMemo(() => keys.find((item) => item.id === selectedKeyId) ?? keys[0], [keys, selectedKeyId]);
 
@@ -46,7 +54,7 @@ export function KeysPage() {
   useEffect(() => {
     if (active) {
       setForm(active);
-      setExpiresAt(active.expires_at ? active.expires_at.slice(0, 10) : "");
+      setExpiresAt(expiryISOStringToDateInput(active.expires_at));
     }
   }, [active]);
 
@@ -67,8 +75,9 @@ export function KeysPage() {
     setBusyAction(null);
   };
 
-  const spendUsage = Math.min(100, Math.round((form.currentSpend / Math.max(form.monthlyBudget, 1)) * 100));
-  const tokenUsage = Math.min(100, Math.round((form.currentTokens / Math.max(form.tokenBudget, 1)) * 100));
+  const spendUsage = budgetUsagePercent(form.currentSpend, form.monthlyBudget);
+  const tokenUsage = budgetUsagePercent(form.currentTokens, form.tokenBudget);
+  const expiryLabel = formatLocalKeyExpiryLabel(dateInputToExpiryISOString(expiresAt));
 
   const handleSave = async () => {
     if (selectedProviders.length === 0) {
@@ -84,18 +93,24 @@ export function KeysPage() {
       ...form,
       allowedProviders: selectedProviders,
       allowedModels: selectedModels,
-      expires_at: expiresAt ? `${expiresAt}T23:59:59Z` : null
+      expires_at: dateInputToExpiryISOString(expiresAt)
     });
     setBusyAction(null);
     closeDrawer();
   };
 
-  const handleRevoke = async (id: string) => {
-    if (!confirm("确定吊销此 Local Key？吊销后使用它的本地工具会立即鉴权失败，此操作不可恢复。")) return;
+  const requestRevoke = (key: LocalKeyRecord) => {
+    setRevokeCandidate(key);
+  };
+
+  const handleRevoke = async () => {
+    if (!revokeCandidate) return;
+    const revokedID = revokeCandidate.id;
     setBusyAction("revoke");
-    await revokeKey(id);
+    await revokeKey(revokedID);
     setBusyAction(null);
-    if (form.id === id) closeDrawer();
+    setRevokeCandidate(null);
+    if (form.id === revokedID) closeDrawer();
   };
 
   const handleRotate = async () => {
@@ -106,7 +121,7 @@ export function KeysPage() {
 
   const handleExtend = async () => {
     setBusyAction("extend");
-    await extendKey(form.id, expiresAt ? `${expiresAt}T23:59:59Z` : null);
+    await extendKey(form.id, dateInputToExpiryISOString(expiresAt));
     setBusyAction(null);
   };
 
@@ -136,7 +151,7 @@ export function KeysPage() {
       {/* List */}
       <div className="flex-col gap-2 list-animate">
         {keys.map((key, index) => {
-          const spendPct = Math.min(100, Math.round((key.currentSpend / Math.max(key.monthlyBudget, 1)) * 100));
+          const spendPct = budgetUsagePercent(key.currentSpend, key.monthlyBudget);
           return (
             <div
               key={key.id}
@@ -180,8 +195,8 @@ export function KeysPage() {
                   {key.displayKey}
                 </span>
                 <span className="list-row-sub">
-                  {key.allowedModels.length} 个模型 · 已用 ${key.currentSpend.toFixed(1)} / ${key.monthlyBudget}
-                  {key.expires_at ? ` · 到期 ${new Date(key.expires_at).toLocaleDateString()}` : " · 长期有效"}
+                  {key.allowedModels.length} 个模型 · 已用 ${key.currentSpend.toFixed(1)} / {monthlyBudgetLabel(key.monthlyBudget)}
+                  {" · "}{formatLocalKeyExpiryLabel(key.expires_at)}
                 </span>
                 {/* Inline budget bar */}
                 <div className="progress-bar" style={{ maxWidth: 240, marginTop: 4 }}>
@@ -205,7 +220,7 @@ export function KeysPage() {
                 <button
                   type="button"
                   className="btn btn-danger btn-sm"
-                  onClick={(e) => { e.stopPropagation(); void handleRevoke(key.id); }}
+                  onClick={(e) => { e.stopPropagation(); requestRevoke(key); }}
                   aria-label={`吊销 ${key.name}`}
                 >
                   <ShieldAlert size={14} />
@@ -309,9 +324,11 @@ export function KeysPage() {
                   <input
                     className="form-control"
                     type="number"
+                    min={0}
                     value={form.monthlyBudget}
-                    onChange={(e) => setForm({ ...form, monthlyBudget: Number(e.target.value) })}
+                    onChange={(e) => setForm({ ...form, monthlyBudget: parseBudgetNumber(e.target.value) })}
                   />
+                  <span className="form-hint">填 0 表示无限制，不设置月消费上限。</span>
                 </div>
 
                 <div className="form-field">
@@ -319,9 +336,11 @@ export function KeysPage() {
                   <input
                     className="form-control"
                     type="number"
+                    min={0}
                     value={form.tokenBudget}
-                    onChange={(e) => setForm({ ...form, tokenBudget: Number(e.target.value) })}
+                    onChange={(e) => setForm({ ...form, tokenBudget: parseTokenBudget(e.target.value) })}
                   />
+                  <span className="form-hint">填 0 表示无限制，不设置令牌上限。</span>
                 </div>
 
                 <div className="form-field">
@@ -335,10 +354,10 @@ export function KeysPage() {
                 </div>
 
                 <div className="form-field">
-                  <label className="form-label">当前有效期</label>
+                  <label className="form-label">有效期</label>
                   <input
                     className="form-control"
-                    value={form.expires_at ? new Date(form.expires_at).toLocaleString() : "长期有效"}
+                    value={expiryLabel}
                     readOnly
                   />
                 </div>
@@ -348,8 +367,8 @@ export function KeysPage() {
               <div className="flex-col gap-3">
                 <div className="usage-row">
                   <div className="usage-header">
-                    <span className="usage-label">本月预算使用率</span>
-                    <span className="usage-value">{spendUsage}%</span>
+                    <span className="usage-label">本月预算使用率（{monthlyBudgetLabel(form.monthlyBudget)}）</span>
+                    <span className="usage-value">{budgetUsageLabel(form.currentSpend, form.monthlyBudget)}</span>
                   </div>
                   <div className="progress-bar">
                     <div
@@ -363,8 +382,8 @@ export function KeysPage() {
                 </div>
                 <div className="usage-row">
                   <div className="usage-header">
-                    <span className="usage-label">令牌配额使用率</span>
-                    <span className="usage-value">{tokenUsage}%</span>
+                    <span className="usage-label">令牌配额使用率（{tokenBudgetLabel(form.tokenBudget)}）</span>
+                    <span className="usage-value">{budgetUsageLabel(form.currentTokens, form.tokenBudget)}</span>
                   </div>
                   <div className="progress-bar">
                     <div
@@ -405,12 +424,48 @@ export function KeysPage() {
               <button type="button" className="btn btn-secondary" onClick={() => void handleExtend()} disabled={busyAction !== null}>
                 {busyAction === "extend" ? <Loader2 size={14} className="spin" /> : <CalendarClock size={14} />} 保存有效期
               </button>
-              <button type="button" className="btn btn-danger" onClick={() => void handleRevoke(form.id)} disabled={busyAction !== null}>
+              <button type="button" className="btn btn-danger" onClick={() => requestRevoke(form)} disabled={busyAction !== null}>
                 {busyAction === "revoke" ? <Loader2 size={14} className="spin" /> : <ShieldAlert size={14} />} 吊销
               </button>
             </div>
           </aside>
         </>
+      )}
+
+      {revokeCandidate && (
+        <div className="confirm-overlay" role="presentation" onClick={() => busyAction !== "revoke" && setRevokeCandidate(null)}>
+          <section
+            className="confirm-dialog danger"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="revoke-local-key-title"
+            aria-describedby="revoke-local-key-desc"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="confirm-dialog-icon" aria-hidden="true">
+              <ShieldAlert size={22} />
+            </div>
+            <div className="confirm-dialog-body">
+              <span className="eyebrow danger-text">高风险操作</span>
+              <h3 id="revoke-local-key-title" className="confirm-dialog-title">吊销 Local Key</h3>
+              <p id="revoke-local-key-desc" className="confirm-dialog-copy">
+                确认吊销 <strong>{revokeCandidate.name}</strong>？吊销后使用它的本地工具会立即鉴权失败，此操作不可恢复。
+              </p>
+              <div className="confirm-dialog-meta">
+                <span>凭证</span>
+                <code>{revokeCandidate.displayKey}</code>
+              </div>
+            </div>
+            <div className="confirm-dialog-actions">
+              <button type="button" className="btn btn-secondary" onClick={() => setRevokeCandidate(null)} disabled={busyAction === "revoke"}>
+                取消
+              </button>
+              <button type="button" className="btn btn-danger" onClick={() => void handleRevoke()} disabled={busyAction === "revoke"}>
+                {busyAction === "revoke" ? <Loader2 size={14} className="spin" /> : <ShieldAlert size={14} />} 确认吊销
+              </button>
+            </div>
+          </section>
+        </div>
       )}
     </div>
   );

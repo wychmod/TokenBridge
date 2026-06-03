@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "dev:wails": "set VITE_WAILS_DEV=1&& vite",
+    "test:expiry": "tsc --module NodeNext --moduleResolution NodeNext --target ES2020 --outDir .tmp-tests --rootDir src --skipLibCheck src/utils/local-key-expiry.ts src/utils/local-key-expiry.test.ts && node .tmp-tests/utils/local-key-expiry.test.js",
+    "test:keys-ui": "tsc --module NodeNext --moduleResolution NodeNext --target ES2020 --outDir .tmp-tests --rootDir src --skipLibCheck src/utils/local-key-revoke-dialog.test.ts && node .tmp-tests/utils/local-key-revoke-dialog.test.js",
     "build": "vite build && node scripts/sync-embed.mjs",
     "build:wails": "vite build --base ./ && node scripts/sync-embed.mjs",
     "preview": "vite preview"

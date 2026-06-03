@@ -33,6 +33,7 @@ dist/
 coverage/
 /web/admin/node_modules/
 /web/admin/dist/
+/web/admin/.tmp-tests/
 /web/admin/package.json.md5
 /frontend/
 
@@ -57,4 +58,3 @@ coverage/
 
 # Explicitly track repository sources that may be shadowed by broad rules
 !/web/admin/package-lock.json
-

@@ -10,7 +10,7 @@ type UIState = {
 };
 
 export const useUIStore = create<UIState>((set) => ({
-  theme: "system",
+  theme: "light",
   initialized: true,
   setTheme: (theme) => set({ theme }),
   setInitialized: (initialized) => set({ initialized })

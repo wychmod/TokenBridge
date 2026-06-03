@@ -73,12 +73,19 @@ export type DistributionPlanRecord = {
 
 export type RoutingSimulation = {
   model: string;
+  requestedModel?: string;
   key: string;
   format: string;
   target: string;
   fallback: string;
   cost: string;
   ttft: string;
+  providerId?: string;
+  providerName?: string;
+  fallbackChain?: string[];
+  formatCompatible?: boolean;
+  formatWarning?: string;
+  scope?: string;
 };
 
 export type SettingsRecord = {
