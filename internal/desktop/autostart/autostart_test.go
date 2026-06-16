@@ -1,13 +1,12 @@
 package autostart
 
 import (
-	"path/filepath"
 	"strings"
 	"testing"
 )
 
 func TestWindowsCommandQuotesExecutablePath(t *testing.T) {
-	exePath := filepath.Join("C:\\Program Files", "TokenBridge", "TokenBridge.exe")
+	exePath := `C:\Program Files\TokenBridge\TokenBridge.exe`
 
 	got := windowsCommand(exePath)
 
