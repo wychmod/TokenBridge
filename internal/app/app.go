@@ -40,6 +40,10 @@ type Application struct {
 }
 
 func New() (*Application, error) {
+	return NewWithSettingsAutostart(nil)
+}
+
+func NewWithSettingsAutostart(autostart settings.AutostartManager) (*Application, error) {
 	appPaths, err := paths.Resolve()
 	if err != nil {
 		return nil, err
@@ -87,7 +91,7 @@ func New() (*Application, error) {
 	usageService := usage.NewService(db)
 	requestLogService := requestlog.NewService(db)
 	routingService := routing.NewService(db, providerService, cfg.Routing.DefaultStrategy)
-	settingsService := settings.NewService(db)
+	settingsService := settings.NewServiceWithAutostart(db, autostart)
 	pricingService := pricing.NewService(db, logger)
 	aiToolUsageService := aitoolusage.NewService(db, pricingService, logger)
 	adminService := admin.NewService(providerService, keyService, usageService, pricingService, routingService, settingsService, requestLogService)

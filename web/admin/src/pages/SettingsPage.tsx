@@ -20,7 +20,7 @@ const fallbackChecks: DesktopCheckItem[] = [
 
 export function SettingsPage() {
   const { settings, distributionPlan, keys, saveSettings, backupSettings, reloadDistributionPlan, pushNotice } = useAdminStore();
-  const [form, setForm] = useState(settings);
+  const [form, setForm] = useState(() => ({ ...settings, startAtLogin: settings.startAtLogin ?? false }));
   const [activeTab, setActiveTab] = useState<"basic" | "setup" | "version" | "data">("basic");
 
   const [desktopVersion, setDesktopVersion] = useState("0.1.0-alpha");
@@ -28,7 +28,7 @@ export function SettingsPage() {
   const [report, setReport] = useState<DesktopSelfCheck | null>(null);
 
   useEffect(() => {
-    setForm(settings);
+    setForm({ ...settings, startAtLogin: settings.startAtLogin ?? false });
   }, [settings]);
 
   useEffect(() => {
@@ -164,6 +164,19 @@ export function SettingsPage() {
             <div className="form-field">
               <label className="form-label">打包方式</label>
               <input className="form-control" value={form.bundleMode} onChange={(e) => setForm({ ...form, bundleMode: e.target.value })} />
+            </div>
+            <div className="form-field" style={{ gridColumn: "1 / -1" }}>
+              <label className="form-label">开机自启动</label>
+              <label className="flex items-center gap-2" style={{ cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={Boolean(form.startAtLogin)}
+                  onChange={(e) => setForm({ ...form, startAtLogin: e.target.checked })}
+                />
+                <span style={{ fontSize: "0.88rem", color: "var(--text-secondary)" }}>
+                  Windows 使用登录启动项，macOS 使用 LaunchAgents。默认关闭。
+                </span>
+              </label>
             </div>
           </div>
         </div>

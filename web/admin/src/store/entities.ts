@@ -106,6 +106,8 @@ export type SettingsRecord = {
   retentionDays: number;
   bundle_mode?: string;
   bundleMode: string;
+  start_at_login?: boolean;
+  startAtLogin: boolean;
 };
 
 export const providerRecords: ProviderRecord[] = [
@@ -205,6 +207,7 @@ export const settingsRecord: SettingsRecord = {
   backupInterval: "24h",
   logLevel: "standard",
   retentionDays: 30,
-  bundleMode: "single-binary"
+  bundleMode: "single-binary",
+  startAtLogin: false
 };
 

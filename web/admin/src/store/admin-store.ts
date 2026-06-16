@@ -461,6 +461,7 @@ type SettingsApiRecord = {
   log_level?: string;
   retention_days?: number;
   bundle_mode?: string;
+  start_at_login?: boolean;
 };
 
 function parseJSONList(raw?: string): string[] {
@@ -635,7 +636,9 @@ function mapSettingsFromApi(record: SettingsApiRecord): SettingsRecord {
     retention_days: record.retention_days,
     retentionDays: record.retention_days ?? 30,
     bundle_mode: record.bundle_mode,
-    bundleMode: labelFromMap(configValueLabelMap, record.bundle_mode ?? "single-binary")
+    bundleMode: labelFromMap(configValueLabelMap, record.bundle_mode ?? "single-binary"),
+    start_at_login: record.start_at_login,
+    startAtLogin: record.start_at_login ?? false
   };
 }
 
@@ -650,7 +653,8 @@ function mapSettingsToApi(record: SettingsRecord) {
     backup_interval: record.backupInterval,
     log_level: valueFromLabel(configValueLabelMap, record.logLevel),
     retention_days: record.retentionDays,
-    bundle_mode: valueFromLabel(configValueLabelMap, record.bundleMode)
+    bundle_mode: valueFromLabel(configValueLabelMap, record.bundleMode),
+    start_at_login: record.startAtLogin ?? false
   };
 }
 

@@ -11,7 +11,12 @@ import (
 )
 
 type Service struct {
-	db *gorm.DB
+	db        *gorm.DB
+	autostart AutostartManager
+}
+
+type AutostartManager interface {
+	Apply(enabled bool) error
 }
 
 type AppSettings struct {
@@ -25,10 +30,15 @@ type AppSettings struct {
 	LogLevel       string `json:"log_level"`
 	RetentionDays  int    `json:"retention_days"`
 	BundleMode     string `json:"bundle_mode"`
+	StartAtLogin   bool   `json:"start_at_login"`
 }
 
 func NewService(db *gorm.DB) *Service {
 	return &Service{db: db}
+}
+
+func NewServiceWithAutostart(db *gorm.DB, autostart AutostartManager) *Service {
+	return &Service{db: db, autostart: autostart}
 }
 
 func defaultAppSettings() AppSettings {
@@ -43,6 +53,7 @@ func defaultAppSettings() AppSettings {
 		LogLevel:       "standard",
 		RetentionDays:  30,
 		BundleMode:     "single-binary",
+		StartAtLogin:   false,
 	}
 }
 
@@ -68,6 +79,11 @@ func (s *Service) Get(ctx context.Context) (AppSettings, error) {
 }
 
 func (s *Service) Save(ctx context.Context, value AppSettings) (AppSettings, error) {
+	if s.autostart != nil {
+		if err := s.autostart.Apply(value.StartAtLogin); err != nil {
+			return AppSettings{}, err
+		}
+	}
 	data, _ := json.Marshal(value)
 	record := models.Setting{
 		Key:       "app_settings",

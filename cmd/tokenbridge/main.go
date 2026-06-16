@@ -18,12 +18,13 @@ import (
 	"github.com/getlantern/systray"
 
 	"tokenbridge/internal/app"
+	"tokenbridge/internal/desktop/autostart"
 )
 
 const trayTooltip = "TokenBridge 本地 AI 网关"
 
 func main() {
-	application, err := app.New()
+	application, err := app.NewWithSettingsAutostart(autostart.NewManager())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to create application: %v\n", err)
 		os.Exit(1)

@@ -17,6 +17,7 @@ import (
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"tokenbridge/internal/app"
+	"tokenbridge/internal/desktop/autostart"
 	"tokenbridge/internal/paths"
 )
 
@@ -104,7 +105,7 @@ func NewDesktopApp() *DesktopApp { return &DesktopApp{State: loadDesktopWindowSt
 
 func (d *DesktopApp) Startup(ctx context.Context) {
 	d.ctx = ctx
-	application, err := app.New()
+	application, err := app.NewWithSettingsAutostart(autostart.NewManager())
 	if err != nil {
 		panic(fmt.Sprintf("failed to create application: %v", err))
 	}
