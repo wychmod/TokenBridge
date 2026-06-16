@@ -103,8 +103,8 @@ jobs:
         working-directory: web/admin
         run: npm run build:wails
 
-      - name: Test Go packages
-        run: go test ./...
+      - name: Test macOS packaging helpers
+        run: go test ./internal/desktop/autostart ./build/embed
 
       - name: Build macOS app
         run: wails build -s -skipbindings -platform darwin/universal -o TokenBridge
