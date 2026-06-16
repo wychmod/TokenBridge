@@ -42,6 +42,9 @@ coverage/
 
 # Portable / release artifacts (generated)
 /build/portable/
+/dist/
+/release/*.dmg
+/release/*.sha256
 /release/*.zip
 /release/*.exe
 

@@ -136,7 +136,7 @@ WINDOWS_CERTIFICATE_PASSWORD
 
 - 修改：`.github/workflows/build-desktop.yml`
 
-- [ ] **步骤 1：查看当前 workflow**
+- [x] **步骤 1：查看当前 workflow**
 
 运行：
 
@@ -151,7 +151,7 @@ Get-Content -Raw .github\workflows\build-desktop.yml
 - 当前只上传 artifact，不创建 GitHub Release。
 - macOS 当前上传的是 `build/bin/TokenBridge.app`，不是 `.dmg`。
 
-- [ ] **步骤 2：替换 workflow 内容**
+- [x] **步骤 2：替换 workflow 内容**
 
 把 `.github/workflows/build-desktop.yml` 替换为以下内容：
 
@@ -314,7 +314,7 @@ jobs:
           fi
 ```
 
-- [ ] **步骤 3：本地检查 workflow 内容**
+- [x] **步骤 3：本地检查 workflow 内容**
 
 运行：
 
@@ -349,7 +349,7 @@ git commit -m "ci: publish desktop release artifacts"
 
 - 新增：`scripts/create-dmg.sh`
 
-- [ ] **步骤 1：创建脚本**
+- [x] **步骤 1：创建脚本**
 
 创建 `scripts/create-dmg.sh`，内容如下：
 
@@ -412,7 +412,7 @@ git commit -m "build: add macos dmg packaging script"
 - 新增：`packaging/macos/README.md`
 - 新增：`packaging/windows/README.md`
 
-- [ ] **步骤 1：新增 macOS 打包说明**
+- [x] **步骤 1：新增 macOS 打包说明**
 
 创建 `packaging/macos/README.md`，内容如下：
 
@@ -453,7 +453,7 @@ APPLE_API_KEY_P8
 7. 把已公证 DMG 上传到 GitHub Release。
 ````
 
-- [ ] **步骤 2：新增 Windows 打包说明**
+- [x] **步骤 2：新增 Windows 打包说明**
 
 创建 `packaging/windows/README.md`，内容如下：
 
@@ -510,7 +510,7 @@ git commit -m "docs: document desktop packaging strategy"
 - 验证：`packaging/macos/README.md`
 - 验证：`packaging/windows/README.md`
 
-- [ ] **步骤 1：运行 Go 测试**
+- [x] **步骤 1：运行 Go 测试**
 
 运行：
 
@@ -522,7 +522,7 @@ go test ./...
 
 - 所有 Go 包测试通过。
 
-- [ ] **步骤 2：运行 Wails dry run**
+- [x] **步骤 2：运行 Wails dry run**
 
 运行：
 
@@ -536,7 +536,7 @@ wails build -dryrun -s -skipbindings -platform windows/amd64 -o TokenBridge.exe
 - 不执行完整构建。
 - 不出现 Wails 配置错误。
 
-- [ ] **步骤 3：构建前端**
+- [x] **步骤 3：构建前端**
 
 运行：
 
@@ -554,7 +554,7 @@ Pop-Location
 - 本地生成 `web/admin/dist`。
 - `web/admin/dist` 仍然被 git ignore，不应被提交。
 
-- [ ] **步骤 4：检查 git 状态**
+- [x] **步骤 4：检查 git 状态**
 
 运行：
 
